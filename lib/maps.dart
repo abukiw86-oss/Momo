@@ -299,7 +299,7 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
             title: const Text("Invite Friends to App"),
             subtitle: const Text("Share download link"),
             onTap: () { 
-              const String appLink = "https://play.google.com/store/apps/details?id=com.yourapp.id";
+              const String appLink = "https://github.com/abukiw86-oss/GPS-Team-Tracker/releases";
               Share.share(
                 "Hey! Download this GPS Tracker app so we can see each other on the map: $appLink",
                 subject: "Download GPS Tracker",

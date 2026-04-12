@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <application
-        android:label=" GPS Team Tracker"
+        android:label="GPS Team Tracker"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <meta-data 

@@ -1,4 +1,4 @@
-package com.example.gps_tracker
+package com.abuki.gpsteamtracker
 
 import io.flutter.embedding.android.FlutterActivity
 

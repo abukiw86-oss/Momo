@@ -12,7 +12,7 @@ dependencies {
   implementation("com.google.firebase:firebase-database")  
 }
 android {
-    namespace = "com.example.gps_tracker"
+    namespace = "com.abuki.gpsteamtracker"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -27,7 +27,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.gps_tracker"
+        applicationId = "com.abuki.gpsteamtracker"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
