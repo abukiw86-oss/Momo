@@ -8,6 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter/services.dart';  
+import 'package:share_plus/share_plus.dart'; 
+
 
 class FreeTrackerMap extends StatefulWidget {
   const FreeTrackerMap({super.key});
@@ -29,6 +32,8 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
   String _userName = "";
   String? _currentSessionId;
   bool _isSearching = false;
+
+  String? _lastMappedTarget;
 
   @override
   void initState() {
@@ -161,10 +166,13 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
     );
   }
    
+  
   void _joinSession(String sessionId, bool isCreatingSession) async {
   final dbRef = FirebaseDatabase.instanceFor(app: Firebase.app(), databaseURL: _dbUrl);
-
-  if (!isCreatingSession) {
+    setState(() {
+        _isSearching = false;
+      });
+  if (!isCreatingSession) { 
     final snapshot = await dbRef.ref("sessions/$sessionId").get();
     if (!snapshot.exists) { 
       if (mounted) {
@@ -219,67 +227,90 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
 }
   
   Future<void> _updateRoadRoute(LatLng destination) async {
-    if (_myLocation == null) return;
-    final url = 'https://router.project-osrm.org/route/v1/driving/'
-        '${_myLocation!.longitude},${_myLocation!.latitude};'
-        '${destination.longitude},${destination.latitude}?overview=full&geometries=geojson';
+  if (_myLocation == null) return; 
+  bool targetChanged = _targetUser != _lastMappedTarget;
 
+  final url = 'https://router.project-osrm.org/route/v1/driving/'
+      '${_myLocation!.longitude},${_myLocation!.latitude};'
+      '${destination.longitude},${destination.latitude}?overview=full&geometries=geojson';
+
+  try {
     final res = await http.get(Uri.parse(url));
     if (res.statusCode == 200) {
-      final data = json.decode(res.body);
-      final List coords = data['routes'][0]['geometry']['coordinates'];
-      setState(() {
-        _routePoints = coords.map((c) => LatLng(c[1].toDouble(), c[0].toDouble())).toList();
-        _distance = (data['routes'][0]['distance'] as num).toDouble();
-      });
+      final data = json.decode(res.body); 
+      if (data['routes'] != null && data['routes'].isNotEmpty) {
+        final List coords = data['routes'][0]['geometry']['coordinates']; 
+        setState(() {
+          _routePoints = coords.map((c) => LatLng(c[1].toDouble(), c[0].toDouble())).toList();
+          _distance = (data['routes'][0]['distance'] as num).toDouble();
+          _lastMappedTarget = _targetUser;  
+        });
+      }
     }
+  } catch (e) {
+    debugPrint("Routing Error: $e");
   }
- 
+}
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      drawer: Drawer(
-        child: Column(
-          children: [
-            UserAccountsDrawerHeader(
-              accountName: Text(_userName),
-              accountEmail: Text("Session: ${_currentSessionId ?? 'No Active Session'}"),
-              currentAccountPicture: const CircleAvatar(child: Icon(Icons.person)),
-              decoration: const BoxDecoration(color: Colors.blueAccent),
-            ),
-            const ListTile(
-              title: Text("Joined Members", style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-            Expanded(
-              child: _teamLocations.isEmpty 
-                ? const Center(child: Text("No one else has joined yet"))
-                : ListView.builder(
-                    itemCount: _teamLocations.length,
-                    itemBuilder: (context, index) {
-                      String name = _teamLocations.keys.elementAt(index);
-                      bool isTarget = _targetUser == name;
-
-                      return ListTile(
-                        leading: Icon(Icons.circle, color: isTarget ? Colors.green : Colors.red, size: 12),
-                        title: Text(name),
-                        subtitle: Text(isTarget ? "Currently Tracking" : "Tap to track"),
-                        trailing: isTarget ? const Icon(Icons.location_searching, color: Colors.blue) : null,
-                        selected: isTarget,
-                        onTap: () {
+    drawer: Drawer(
+      child: Column(
+        children: [ 
+          UserAccountsDrawerHeader(
+            accountName: Text(_userName),
+            accountEmail: Text("Session: ${_currentSessionId ?? 'None'}"),
+            decoration: const BoxDecoration(color: Colors.blueAccent),
+          ), 
+          const ListTile(
+            title: Text("Group Members", style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          Expanded(
+            child: _teamLocations.isEmpty 
+              ? const Center(child: Text("No one joined yet"))
+              : ListView.builder(
+                  padding: EdgeInsets.zero,
+                  itemCount: _teamLocations.length,
+                  itemBuilder: (context, index) {
+                    String name = _teamLocations.keys.elementAt(index);
+                    return ListTile(
+                      title: Text(name),
+                      leading: const Icon(Icons.person, color: Colors.red),
+                      onTap: () {
                           setState(() {
-                            _targetUser = name;
-                            _updateRoadRoute(_teamLocations[name]!);
-                          });
-                          Navigator.pop(context);  
-                          _mapController.move(_teamLocations[name]!, 15); 
+                            _routePoints = [];
+                            _targetUser = name;  
+                          }); 
+                        if (_teamLocations.containsKey(name)) {
+                          _updateRoadRoute(_teamLocations[name]!); 
+                          _mapController.move(_teamLocations[name]!, 15);
+                        } 
+                          Navigator.pop(context); 
+                          _mapController.move(_teamLocations[name]!, 15);  
                         },
-                      );
-                    },
-                  ),
-            ),
-          ],
-        ),
+                    );
+                  },
+                ),
+          ), 
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.share, color: Colors.blueAccent),
+            title: const Text("Invite Friends to App"),
+            subtitle: const Text("Share download link"),
+            onTap: () { 
+              const String appLink = "https://play.google.com/store/apps/details?id=com.yourapp.id";
+              Share.share(
+                "Hey! Download this GPS Tracker app so we can see each other on the map: $appLink",
+                subject: "Download GPS Tracker",
+              );
+            }, 
+          ),
+          const SizedBox(height: 10), 
+        ],
       ),
+    ),
+        
     appBar: AppBar(
       title:  _isSearching 
     ? TextField(
@@ -303,7 +334,7 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
           },
         ),
         IconButton(
-          icon: const Icon(Icons.share),
+          icon: const Icon(Icons.join_full),
           onPressed: () => _showSessionDialog(),
         ),
       ],
@@ -387,116 +418,190 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
   
   Widget _markerWidget(String label, Color color) {
     return Column(children: [
-      Container(color: Colors.white, child: Text(label, style: const TextStyle(fontSize: 10))),
-      Icon(Icons.location_on, color: color, size: 30),
+      Container(color: Colors.white, child: Text(label, style: const TextStyle(fontSize: 18))),
+      Icon(Icons.location_on, color: color, size: 50),
     ]);
   }
     
   void _showSessionDialog() {
-  TextEditingController sessionCtrl = TextEditingController(); 
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text("Location Sharing"),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [ 
-          if (_currentSessionId != null) ...[
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                children: [
-                  const Text("Your Current Group Code:", style: TextStyle(fontSize: 12)),
-                  Text(_currentSessionId!, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 2)),
-                  TextButton.icon(
-                    icon: const Icon(Icons.copy, size: 18),
-                    label: const Text("Copy & Share"),
-                    onPressed: () {  
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Code copied!")));
-                    },
+    TextEditingController sessionCtrl = TextEditingController();  
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: const Text("Location Sharing"),
+        content: SingleChildScrollView(  
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [ 
+              if (_currentSessionId != null) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.blue.withOpacity(0.3)),
                   ),
-                ],
+                  child: Column(
+                    children: [
+                      const Text("Active Group Code", style: TextStyle(fontSize: 12, color: Colors.blueGrey)),
+                      const SizedBox(height: 5),
+                      SelectableText( // Allows user to manually highlight if they want
+                        _currentSessionId!, 
+                        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: 3, color: Colors.blue),
+                      ),
+                      const SizedBox(height: 5),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                        ),
+                        icon: const Icon(Icons.copy_all, size: 18),
+                        label: const Text("Copy & Share"),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: _currentSessionId!));
+                          Share.share("Track me on GPS Tracker! Group Code: $_currentSessionId");
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Code copied!")),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 30),
+              ],
+
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 45)),
+                icon: const Icon(Icons.group_add),
+                label: const Text("Create New Group"),
+                onPressed: () {
+                  String newId = const Uuid().v4().substring(0, 6).toUpperCase();
+                  Navigator.pop(context);
+                  _joinSession(newId, true);
+                  
+                  // We show the share sheet immediately after creating
+                  Share.share("Join my location group! Code: $newId");
+                },
               ),
-            ),
-            const Divider(height: 30),
-          ],
+              
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 15),
+                child: Row(
+                  children: [
+                    Expanded(child: Divider()),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 10),
+                      child: Text("OR JOIN", style: TextStyle(fontSize: 10, color: Colors.grey)),
+                    ),
+                    Expanded(child: Divider()),
+                  ],
+                ),
+              ),
 
-          ElevatedButton.icon(
-            icon: const Icon(Icons.group_add),
-            label: const Text("Create New Group"),
+              TextField(
+                controller: sessionCtrl,
+                textAlign: TextAlign.center,
+                maxLength: 6,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 2),
+                decoration: InputDecoration(
+                  hintText: "CODE",
+                  counterText: "", // Hide character counter
+                  hintStyle: const TextStyle(letterSpacing: 0, fontWeight: FontWeight.normal),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Close"),
+          ),
+          ElevatedButton(
             onPressed: () {
-              String newId = const Uuid().v4().substring(0, 6).toUpperCase();
-              Navigator.pop(context);
-              _joinSession(newId,true);  
-               
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text("Group $newId Created! Share it with friends.")),
-              );
+              if (sessionCtrl.text.length == 6) {
+                _joinSession(sessionCtrl.text.toUpperCase(), false);
+                Navigator.pop(context);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Please enter a 6-digit code")),
+                );
+              }
             },
-          ),
-          
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 15),
-            child: Text("OR JOIN EXISTING", style: TextStyle(fontSize: 10, color: Colors.grey)),
-          ),
-
-          TextField(
-            controller: sessionCtrl,
-            textAlign: TextAlign.center,
-            decoration: InputDecoration(
-              hintText: "Enter 6-digit Code",
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              contentPadding: const EdgeInsets.symmetric(vertical: 10),
-            ),
-          ),
+            child: const Text("Join Now"),
+          )
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text("Cancel"),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            if (sessionCtrl.text.length == 6) {
-              _joinSession(sessionCtrl.text.toUpperCase(),false);
-              Navigator.pop(context);
-            }
-          },
-          child: const Text("Join"),
-        )
-      ],
-    ),
-  );
-}
+    );
+  }
 
-Widget _buildDistanceCard() {
-  if (_targetUser == null || !_teamLocations.containsKey(_targetUser)) {
-    return const SizedBox();
-  } 
-  return Positioned(
-    bottom: 20,
-    left: 10,
-    right: 10,
-    child: Card(
-      elevation: 8,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      child: ListTile(
-        leading: const Icon(Icons.navigation, color: Colors.blueAccent),
-        title: Text("Tracking: $_targetUser"),
-        subtitle: Text(
-          "Distance: ${_distance < 1000 ? '${_distance.toStringAsFixed(0)} m' : '${(_distance / 1000).toStringAsFixed(2)} km'}"
-        ),
-        trailing: IconButton(
-          icon: const Icon(Icons.people),
-          onPressed: () => Scaffold.of(context).openDrawer(), 
+  Widget _buildDistanceCard() { 
+    bool isTrackingOthers = _targetUser != null && _teamLocations.containsKey(_targetUser);
+    
+    if (_myLocation == null) {
+      return const SizedBox();
+    } 
+    final displayLocation = isTrackingOthers ? _teamLocations[_targetUser]! : _myLocation!;
+    final displayName = isTrackingOthers ? _targetUser : "My Location (Solo)";
+
+    return Positioned(
+      bottom: 20,
+      left: 10,
+      right: 10,
+      child: Card(
+        elevation: 8,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: isTrackingOthers ? Colors.green : Colors.blueAccent,
+              child: Icon(
+                isTrackingOthers ? Icons.navigation : Icons.person_pin_circle, 
+                color: Colors.white
+              ),
+            ),
+            title: Text(
+              displayName!,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 4),
+                if (isTrackingOthers)
+                  Text(
+                    "Distance: ${_distance < 1000 ? '${_distance.toStringAsFixed(0)} m' : '${(_distance / 1000).toStringAsFixed(2)} km'}",
+                    style: const TextStyle(color: Colors.black87),
+                  )
+                else
+                  const Text("Not tracking anyone else", style: TextStyle(color: Colors.grey)), 
+                const SizedBox(height: 2), 
+                Text(
+                  "Lat: ${displayLocation.latitude.toStringAsFixed(5)}, Lng: ${displayLocation.longitude.toStringAsFixed(5)}",
+                  style: TextStyle(fontSize: 11, color: Colors.grey[600], fontFamily: 'monospace'),
+                ),
+              ],
+            ),
+            trailing: Builder(
+              builder: (context) { 
+                return IconButton(
+                  icon: const Icon(Icons.people_alt_rounded, color: Colors.blueAccent),
+                  onPressed: () {
+                    Scaffold.of(context).openDrawer();
+                  },
+                );
+              },
+            ),
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 }
