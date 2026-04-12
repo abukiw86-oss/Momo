@@ -20,7 +20,7 @@ A professional, full-stack location-sharing ecosystem built with **Flutter**, **
 
 | Live Map Tracking | Dynamic Session Sharing | Team Management Drawer |
 | :---: | :---: | :---: |
-|  |  |  |
+| <img width="799" height="1280" alt="image" src="https://github.com/user-attachments/assets/62b42a60-d56f-4088-a72f-3a33f5d4bf9f" />|<img width="799" height="1280" alt="image" src="https://github.com/user-attachments/assets/c09df41f-dedd-4ba5-8b05-716a49ff6c03" /> | <img width="799" height="1280" alt="image" src="https://github.com/user-attachments/assets/0ef0e600-ff90-400f-bd4b-1948e1cf82f7" /> |
 
 -----
 
@@ -44,7 +44,7 @@ The app uses a **Dual-Stream Architecture**. Live coordinates are pushed to Fire
 ## get the APP 
 #  GPS Team Tracker 
 
-[![Release](https://img.shields.io/github/v/release/abukiw86-oss/?label=Download%20APK&style=for-the-badge&color=green)](https://github.com/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME/releases/latest)
+[![Release](https://img.shields.io/github/v/release/abukiw86-oss/?label=Download%20APK&style=for-the-badge&color=green)](https://github.com/abukiw86-oss/GPS-Team-Tracker/releases/latest)
 ## 👨‍💻 Developed By
 
 **Abubeker** 
