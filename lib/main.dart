@@ -35,40 +35,32 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  String _status = "Waiting to start..."; 
+class _MyHomePageState extends State<MyHomePage> { 
 
   Future<void> _setupPermissions() async {
     LocationPermission permission = await Geolocator.checkPermission();
 
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        setState(() => _status = "Permission Denied");
+      if (permission == LocationPermission.denied) { 
         return;
       }
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      setState(() => _status = "Location permissions permanently denied");
+    } 
+    if (permission == LocationPermission.deniedForever) { 
       return;
-    }
- 
+    } 
     if (permission == LocationPermission.whileInUse) { 
         print("Background permission check required in settings.");
     }
-
-    setState(() => _status = "Permissions Granted"); 
   }
  
   @override
   void initState() {
     super.initState();
     _setupPermissions();  
-  }
-
+  } 
   @override
   Widget build(BuildContext context) {
- return LiveTrackerMap();
-}
+  return FreeTrackerMap();
+  }
 }
