@@ -3,7 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 // import 'package:firebase_database/firebase_database.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:gps_tracker/maps.dart';
-
+import 'package:shared_preferences/shared_preferences.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
@@ -36,6 +36,7 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> { 
+  String _userName = "Guest";
 
   Future<void> _setupPermissions() async {
     LocationPermission permission = await Geolocator.checkPermission();
@@ -52,12 +53,12 @@ class _MyHomePageState extends State<MyHomePage> {
     if (permission == LocationPermission.whileInUse) { 
         print("Background permission check required in settings.");
     }
-  }
- 
+  } 
+
   @override
   void initState() {
     super.initState();
-    _setupPermissions();  
+    _setupPermissions();   
   } 
   @override
   Widget build(BuildContext context) {
