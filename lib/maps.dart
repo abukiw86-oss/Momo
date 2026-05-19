@@ -1,16 +1,5 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'config/imports.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:firebase_database/firebase_database.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uuid/uuid.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:flutter/services.dart';  
-import 'package:share_plus/share_plus.dart'; 
-
 
 class FreeTrackerMap extends StatefulWidget {
   const FreeTrackerMap({super.key});
@@ -21,124 +10,43 @@ class FreeTrackerMap extends StatefulWidget {
 
 class _FreeTrackerMapState extends State<FreeTrackerMap> {
   final MapController _mapController = MapController();
-  final String _dbUrl = "https://gps-tracker-de7dc-default-rtdb.europe-west1.firebasedatabase.app";
-  
-  LatLng? _myLocation;
-  Map<String, LatLng> _teamLocations = {};
-  List<LatLng> _routePoints = [];
-  double _distance = 0.0;  
-  String? _targetUser;
-
-  String _userName = "";
-  String? _currentSessionId;
-  bool _isSearching = false;
-
-  String? _lastMappedTarget;
 
   @override
   void initState() {
     super.initState();
-    _setupUserAndTracking();
-  }
- 
-  Future<void> _setupUserAndTracking() async { 
-  LocationPermission permission = await Geolocator.checkPermission();
-  if (permission == LocationPermission.denied) {
-    permission = await Geolocator.requestPermission();
-  } 
-  Position position = await Geolocator.getCurrentPosition(
-    desiredAccuracy: LocationAccuracy.high
-  );
-  
-  LatLng currentLatLng = LatLng(position.latitude, position.longitude);
-
-  setState(() {
-    _myLocation = currentLatLng;
-  }); 
-  Future.delayed(const Duration(milliseconds: 500), () {
-    _mapController.move(currentLatLng, 15);
-  }); 
-  final prefs = await SharedPreferences.getInstance();
-  String? savedName = prefs.getString('user_name');
-  if (savedName == null) {
-    _showNameDialog();
-  } else {
-    setState(() => _userName = savedName);
-    _startMyLocalTracking();
-  }
-}
- 
-  void _startMyLocalTracking() {
-    Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high, 
-        distanceFilter: 5  
-      ),
-    ).listen((position) {
-      if (mounted) {
-        LatLng newPos = LatLng(position.latitude, position.longitude);
-        setState(() => _myLocation = newPos);
-         
-        if (_currentSessionId != null) {
-          FirebaseDatabase.instanceFor(app: Firebase.app(), databaseURL: _dbUrl)
-              .ref("sessions/$_currentSessionId/users/$_userName")
-              .update({ // Use update to only change lat/lng/time
-            "lat": position.latitude,
-            "lng": position.longitude,
-            "last_seen": ServerValue.timestamp,
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = Provider.of<TrackingProvider>(context, listen: false);
+      provider.initializeTracking(
+        onLocationLoaded: (location) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) {
+              _mapController.move(location, 15);
+            }
           });
-        }
-      }
+        },
+        onNameRequired: () {
+          _showNameDialog();
+        },
+      );
     });
   }
-    
-  void _handleSearchSubmit(String val )  async{
-  if (val.isEmpty) return;
-   
-        if (val.isEmpty) return; 
-        try {
-          final snapshot = await FirebaseDatabase.instanceFor(
-            app: Firebase.app(),
-            databaseURL: _dbUrl,
-          ).ref("places").get();
 
-          final data = snapshot.value as Map?;
-          bool found = false;
-
-          if (data != null) {
-            data.forEach((k, v) { 
-              if (v['name'].toString().toLowerCase().contains(val.toLowerCase())) {
-                LatLng target = LatLng(
-                  (v['lat'] as num).toDouble(),
-                  (v['lng'] as num).toDouble(),
-                );
-                
-                _mapController.move(target, 16);  
-                _updateRoadRoute(target);
-                
-                found = true;
-                setState(() {
-                  _isSearching = false;
-                });
-              }
-            });
-          }
-
-          if (!found) { 
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("Place '$val' not found in database"),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
-        } catch (e) { 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Error: ${e.toString()}")),
-          );
-        }
-   
-}
+  void _handleSearchSubmit(String val) async {
+    if (val.isEmpty) return;
+    final provider = Provider.of<TrackingProvider>(context, listen: false);
+    final target = await provider.searchPlace(val);
+    if (!mounted) return;
+    if (target != null) {
+      _mapController.move(target, 16);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Place '$val' not found in database"),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
 
   void _showNameDialog() {
     TextEditingController controller = TextEditingController();
@@ -147,294 +55,283 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: const Text("Enter Your Name"),
-        content: TextField(controller: controller, decoration: const InputDecoration(hintText: "e.g. Abuki")),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: "e.g. Abuki"),
+        ),
         actions: [
           TextButton(
             onPressed: () async {
               if (controller.text.isNotEmpty) {
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.setString('user_name', controller.text);
-                setState(() => _userName = controller.text);
-                Navigator.pop(context);
-                _startMyLocalTracking();
+                final provider = Provider.of<TrackingProvider>(
+                  context,
+                  listen: false,
+                );
+                await provider.setSavedUserName(controller.text);
+                if (context.mounted) {
+                  Navigator.pop(context);
+                }
               }
             },
             child: const Text("Save"),
-          )
+          ),
         ],
       ),
     );
   }
-   
-  
+
   void _joinSession(String sessionId, bool isCreatingSession) async {
-  final dbRef = FirebaseDatabase.instanceFor(app: Firebase.app(), databaseURL: _dbUrl);
-    setState(() {
-        _isSearching = false;
-      });
-  if (!isCreatingSession) { 
-    final snapshot = await dbRef.ref("sessions/$sessionId").get();
-    if (!snapshot.exists) { 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Invalid Code!"), backgroundColor: Colors.red),
-        );
-      } 
-      return; 
+    final provider = Provider.of<TrackingProvider>(context, listen: false);
+    bool success = await provider.joinOrCreateSession(
+      sessionId,
+      isCreatingSession: isCreatingSession,
+    );
+    if (!mounted) return;
+    if (!success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Invalid Code!"),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
-
-  setState(() {
-    _currentSessionId = sessionId;
-    _teamLocations.clear(); 
-    _targetUser = null; 
-  });
-
-  if (_myLocation != null) {
-    await dbRef.ref("sessions/$sessionId/users/$_userName").set({
-      "name": _userName,
-      "lat": _myLocation!.latitude,
-      "lng": _myLocation!.longitude,
-      "last_seen": ServerValue.timestamp,
-    });
-  }
-
-  dbRef.ref("sessions/$sessionId/users").onValue.listen((event) {
-    final data = event.snapshot.value as Map?;
-    if (data != null && mounted) {
-      Map<String, LatLng> newTeam = {};
-      data.forEach((key, value) {
-        if (key != _userName) {
-          newTeam[key] = LatLng(
-            (value['lat'] as num).toDouble(),
-            (value['lng'] as num).toDouble(),
-          );
-        }
-      });
-
-      setState(() {
-        _teamLocations = newTeam;
-         
-        if (_targetUser == null && newTeam.isNotEmpty) {
-          _targetUser = newTeam.keys.first;
-        } 
-        if (_targetUser != null && newTeam.containsKey(_targetUser)) {
-          _updateRoadRoute(newTeam[_targetUser]!);
-        }
-      });
-    }
-  });
-}
-  
-  Future<void> _updateRoadRoute(LatLng destination) async {
-  if (_myLocation == null) return; 
-  bool targetChanged = _targetUser != _lastMappedTarget;
-
-  final url = 'https://router.project-osrm.org/route/v1/driving/'
-      '${_myLocation!.longitude},${_myLocation!.latitude};'
-      '${destination.longitude},${destination.latitude}?overview=full&geometries=geojson';
-
-  try {
-    final res = await http.get(Uri.parse(url));
-    if (res.statusCode == 200) {
-      final data = json.decode(res.body); 
-      if (data['routes'] != null && data['routes'].isNotEmpty) {
-        final List coords = data['routes'][0]['geometry']['coordinates']; 
-        setState(() {
-          _routePoints = coords.map((c) => LatLng(c[1].toDouble(), c[0].toDouble())).toList();
-          _distance = (data['routes'][0]['distance'] as num).toDouble();
-          _lastMappedTarget = _targetUser;  
-        });
-      }
-    }
-  } catch (e) {
-    debugPrint("Routing Error: $e");
-  }
-}
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-    drawer: Drawer(
-      child: Column(
-        children: [ 
-          UserAccountsDrawerHeader(
-            accountName: Text(_userName),
-            accountEmail: Text("Session: ${_currentSessionId ?? 'None'}"),
-            decoration: const BoxDecoration(color: Colors.blueAccent),
-          ), 
-          const ListTile(
-            title: Text("Group Members", style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-          Expanded(
-            child: _teamLocations.isEmpty 
-              ? const Center(child: Text("No one joined yet"))
-              : ListView.builder(
-                  padding: EdgeInsets.zero,
-                  itemCount: _teamLocations.length,
-                  itemBuilder: (context, index) {
-                    String name = _teamLocations.keys.elementAt(index);
-                    return ListTile(
-                      title: Text(name),
-                      leading: const Icon(Icons.person, color: Colors.red),
-                      onTap: () {
-                          setState(() {
-                            _routePoints = [];
-                            _targetUser = name;  
-                          }); 
-                        if (_teamLocations.containsKey(name)) {
-                          _updateRoadRoute(_teamLocations[name]!); 
-                          _mapController.move(_teamLocations[name]!, 15);
-                        } 
-                          Navigator.pop(context); 
-                          _mapController.move(_teamLocations[name]!, 15);  
-                        },
+    return Consumer<TrackingProvider>(
+      builder: (context, provider, child) {
+        return Scaffold(
+          drawer: Drawer(
+            width: MediaQuery.of(context).size.width * 0.85,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.zero,
+            ),
+            child: Column(
+              children: [
+                Center(
+                  child: UserAccountsDrawerHeader(
+                    currentAccountPicture: CircleAvatar(
+                      backgroundColor: Colors.transparent,
+                      backgroundImage: AssetImage('assets/images/momo.png'),
+                    ),
+                    accountName: Text(provider.userName),
+                    accountEmail: Text(
+                      "Session: ${provider.currentSessionId ?? 'None'}",
+                    ),
+                    decoration: const BoxDecoration(color: Colors.blue),
+                  ),
+                ),
+                const ListTile(
+                  title: Text(
+                    "Group Members",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Expanded(
+                  child: provider.teamLocations.isEmpty
+                      ? const Center(child: Text("No one joined yet"))
+                      : ListView.builder(
+                          padding: EdgeInsets.zero,
+                          itemCount: provider.teamLocations.length,
+                          itemBuilder: (context, index) {
+                            String name = provider.teamLocations.keys.elementAt(
+                              index,
+                            );
+                            return ListTile(
+                              title: Text(name),
+                              leading: CircleAvatar(
+                                backgroundColor: Colors.transparent,
+                                backgroundImage: AssetImage(
+                                  'assets/images/momo.png',
+                                ),
+                              ),
+                              onTap: () {
+                                provider.selectTargetUser(name);
+                                final targetLoc = provider.teamLocations[name];
+                                if (targetLoc != null) {
+                                  _mapController.move(targetLoc, 15);
+                                }
+                                Navigator.pop(context);
+                              },
+                            );
+                          },
+                        ),
+                ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.share, color: Colors.blueAccent),
+                  title: const Text("Invite Friends to App"),
+                  subtitle: const Text("Share download link"),
+                  onTap: () {
+                    const String appLink =
+                        "https://github.com/abukiw86-oss/GPS-Team-Tracker/releases";
+                    Share.share(
+                      "Hey! Download this GPS Tracker app so we can see each other on the map: $appLink",
+                      subject: "Download GPS Tracker",
                     );
                   },
                 ),
-          ), 
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.share, color: Colors.blueAccent),
-            title: const Text("Invite Friends to App"),
-            subtitle: const Text("Share download link"),
-            onTap: () { 
-              const String appLink = "https://github.com/abukiw86-oss/GPS-Team-Tracker/releases";
-              Share.share(
-                "Hey! Download this GPS Tracker app so we can see each other on the map: $appLink",
-                subject: "Download GPS Tracker",
-              );
-            }, 
-          ),
-          const SizedBox(height: 10), 
-        ],
-      ),
-    ),
-        
-    appBar: AppBar(
-      title:  _isSearching 
-    ? TextField(
-        autofocus: true,
-        style: const TextStyle(color: Colors.black),
-        decoration: const InputDecoration(
-          hintText: "Search places...",
-          hintStyle: TextStyle(color: Colors.black),
-          border: InputBorder.none,
-        ), 
-        onSubmitted: (val) => _handleSearchSubmit(val),  
-      )
-        : Text("Hi, $_userName ${_currentSessionId != null ? '($_currentSessionId)' : ''}"),
-      actions: [
-        IconButton(
-          icon: Icon(_isSearching ? Icons.close : Icons.search),
-          onPressed: () {
-            setState(() {
-              _isSearching = !_isSearching; 
-            });
-          },
-        ),
-        IconButton(
-          icon: const Icon(Icons.join_full),
-          onPressed: () => _showSessionDialog(),
-        ),
-      ],
-    ), 
-      body: Stack(
-        children: [
-          FlutterMap(
-            mapController: _mapController,
-           options: MapOptions( 
-                initialCenter: _myLocation ?? const LatLng(9.03, 38.74), 
-                initialZoom: 15,
-              ),
-                        children: [
-              TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-              ,userAgentPackageName: 'com.abuki.fleet_tracker_ethiopia',
-              ),
-              if (_routePoints.isNotEmpty)
-                PolylineLayer(polylines: [
-                  Polyline(points: _routePoints, color: Colors.red, strokeWidth: 4)
-                ]),
-              MarkerLayer(
-                markers: [
-                  // 1. My Marker
-                  if (_myLocation != null)
-                    Marker(
-                      point: _myLocation!,
-                      width: 80, height: 80,
-                      child: _markerWidget("Me", Colors.blue),
-                    ), 
-                  ..._teamLocations.entries.map((entry) {
-                      bool isTracked = entry.key == _targetUser;
-                      return Marker(
-                        point: entry.value,
-                        width: 80, height: 80,
-                        child: Column(
-                          children: [
-                            // Name Tag
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: isTracked ? Colors.green : Colors.black54,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(entry.key, style: const TextStyle(color: Colors.white, fontSize: 10)),
-                            ),
-                            // The Marker Icon
-                            Icon(
-                              Icons.location_on, 
-                              size: isTracked ? 45 : 35,
-                              color: isTracked ? Colors.green : Colors.red
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                ],),
-            ],
-          ),       
-          Positioned(bottom: 20, left: 10, right: 10, child: _buildDistanceCard()), 
-          Positioned(
-            right: 20,
-            bottom: 110,  
-            child: FloatingActionButton(
-              backgroundColor: Colors.blueAccent,
-              child: const Icon(Icons.my_location, color: Colors.white),
-              onPressed: () {
-                if (_myLocation != null) { 
-                  _mapController.move(_myLocation!, 17);
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Locating you...")),
-                  );
-                }
-              },
+                const SizedBox(height: 10),
+              ],
             ),
-          ),  
-        ],
-      ),
+          ),
+          appBar: AppBar(
+            title: provider.isSearching
+                ? TextField(
+                    autofocus: true,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      hintText: "Search places...",
+                      hintStyle: TextStyle(color: Colors.white),
+                      border: InputBorder.none,
+                    ),
+                    onSubmitted: (val) => _handleSearchSubmit(val),
+                  )
+                : Text(
+                    "Hi, ${provider.userName} ${provider.currentSessionId != null ? '(${provider.currentSessionId})' : ''}",
+                  ),
+            actions: [
+              IconButton(
+                icon: Icon(provider.isSearching ? Icons.close : Icons.search),
+                onPressed: () {
+                  provider.toggleSearching();
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.join_full),
+                onPressed: () => _showSessionDialog(provider),
+              ),
+            ],
+          ),
+          body: Stack(
+            children: [
+              FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter:
+                      provider.myLocation ?? const LatLng(9.03, 38.74),
+                  initialZoom: 15,
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.momo.gps',
+                  ),
+                  if (provider.routePoints.isNotEmpty)
+                    PolylineLayer(
+                      polylines: [
+                        Polyline(
+                          points: provider.routePoints,
+                          color: Colors.red,
+                          strokeWidth: 4,
+                        ),
+                      ],
+                    ),
+                  MarkerLayer(
+                    markers: [
+                      if (provider.myLocation != null)
+                        Marker(
+                          point: provider.myLocation!,
+                          width: 80,
+                          height: 80,
+                          child: _markerWidget("Me", Colors.blue),
+                        ),
+                      ...provider.teamLocations.entries.map((entry) {
+                        bool isTracked = entry.key == provider.targetUser;
+                        return Marker(
+                          point: entry.value,
+                          width: 80,
+                          height: 80,
+                          child: Column(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isTracked
+                                      ? Colors.green
+                                      : Colors.black54,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  entry.key,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ),
+                              Icon(
+                                Icons.location_on,
+                                size: isTracked ? 45 : 35,
+                                color: isTracked ? Colors.green : Colors.red,
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ],
+              ),
+              Positioned(
+                bottom: 20,
+                left: 10,
+                right: 10,
+                child: _buildDistanceCard(provider),
+              ),
+              Positioned(
+                right: 20,
+                bottom: 110,
+                child: FloatingActionButton(
+                  backgroundColor: Colors.blueAccent,
+                  child: const Icon(Icons.my_location, color: Colors.white),
+                  onPressed: () {
+                    if (provider.myLocation != null) {
+                      _mapController.move(provider.myLocation!, 17);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Locating you...")),
+                      );
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
-  
+
   Widget _markerWidget(String label, Color color) {
-    return Column(children: [
-      Container(color: Colors.white, child: Text(label, style: const TextStyle(fontSize: 18))),
-      Icon(Icons.location_on, color: color, size: 50),
-    ]);
+    return Column(
+      children: [
+        Container(
+          color: Colors.white,
+          child: Text(label, style: const TextStyle(fontSize: 18)),
+        ),
+        Icon(Icons.location_on, color: color, size: 50),
+      ],
+    );
   }
-    
-  void _showSessionDialog() {
-    TextEditingController sessionCtrl = TextEditingController();  
+
+  void _showSessionDialog(TrackingProvider provider) {
+    TextEditingController sessionCtrl = TextEditingController();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
         title: const Text("Location Sharing"),
-        content: SingleChildScrollView(  
+        content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: [ 
-              if (_currentSessionId != null) ...[
+            children: [
+              if (provider.currentSessionId != null) ...[
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
@@ -445,11 +342,19 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                   ),
                   child: Column(
                     children: [
-                      const Text("Active Group Code", style: TextStyle(fontSize: 12, color: Colors.blueGrey)),
+                      const Text(
+                        "Active Group Code",
+                        style: TextStyle(fontSize: 12, color: Colors.blueGrey),
+                      ),
                       const SizedBox(height: 5),
-                      SelectableText( // Allows user to manually highlight if they want
-                        _currentSessionId!, 
-                        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: 3, color: Colors.blue),
+                      SelectableText(
+                        provider.currentSessionId!,
+                        style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 3,
+                          color: Colors.blue,
+                        ),
                       ),
                       const SizedBox(height: 5),
                       ElevatedButton.icon(
@@ -461,8 +366,12 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                         icon: const Icon(Icons.copy_all, size: 18),
                         label: const Text("Copy & Share"),
                         onPressed: () {
-                          Clipboard.setData(ClipboardData(text: _currentSessionId!));
-                          Share.share("Track me on GPS Tracker! Group Code: $_currentSessionId");
+                          Clipboard.setData(
+                            ClipboardData(text: provider.currentSessionId!),
+                          );
+                          Share.share(
+                            "Track me on GPS Tracker! Group Code: ${provider.currentSessionId}",
+                          );
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text("Code copied!")),
                           );
@@ -473,21 +382,22 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                 ),
                 const Divider(height: 30),
               ],
-
               ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 45)),
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 45),
+                ),
                 icon: const Icon(Icons.group_add),
                 label: const Text("Create New Group"),
                 onPressed: () {
-                  String newId = const Uuid().v4().substring(0, 6).toUpperCase();
+                  String newId = const Uuid()
+                      .v4()
+                      .substring(0, 6)
+                      .toUpperCase();
                   Navigator.pop(context);
                   _joinSession(newId, true);
-                  
-                  // We show the share sheet immediately after creating
                   Share.share("Join my location group! Code: $newId");
                 },
               ),
-              
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 15),
                 child: Row(
@@ -495,23 +405,34 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                     Expanded(child: Divider()),
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 10),
-                      child: Text("OR JOIN", style: TextStyle(fontSize: 10, color: Colors.grey)),
+                      child: Text(
+                        "OR JOIN",
+                        style: TextStyle(fontSize: 10, color: Colors.grey),
+                      ),
                     ),
                     Expanded(child: Divider()),
                   ],
                 ),
               ),
-
               TextField(
                 controller: sessionCtrl,
                 textAlign: TextAlign.center,
                 maxLength: 6,
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 2),
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2,
+                ),
                 decoration: InputDecoration(
                   hintText: "CODE",
-                  counterText: "", // Hide character counter
-                  hintStyle: const TextStyle(letterSpacing: 0, fontWeight: FontWeight.normal),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  counterText: "",
+                  hintStyle: const TextStyle(
+                    letterSpacing: 0,
+                    fontWeight: FontWeight.normal,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                   contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
@@ -535,70 +456,83 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
               }
             },
             child: const Text("Join Now"),
-          )
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildDistanceCard() { 
-    bool isTrackingOthers = _targetUser != null && _teamLocations.containsKey(_targetUser);
-    
-    if (_myLocation == null) {
-      return const SizedBox();
-    } 
-    final displayLocation = isTrackingOthers ? _teamLocations[_targetUser]! : _myLocation!;
-    final displayName = isTrackingOthers ? _targetUser : "My Location (Solo)";
+  Widget _buildDistanceCard(TrackingProvider provider) {
+    bool isTrackingOthers =
+        provider.targetUser != null &&
+        provider.teamLocations.containsKey(provider.targetUser);
 
-    return Positioned(
-      bottom: 20,
-      left: 10,
-      right: 10,
-      child: Card(
-        elevation: 8,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8.0),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: isTrackingOthers ? Colors.green : Colors.blueAccent,
-              child: Icon(
-                isTrackingOthers ? Icons.navigation : Icons.person_pin_circle, 
-                color: Colors.white
-              ),
+    if (provider.myLocation == null) {
+      return const SizedBox();
+    }
+    final displayLocation = isTrackingOthers
+        ? provider.teamLocations[provider.targetUser]!
+        : provider.myLocation!;
+    final displayName = isTrackingOthers
+        ? provider.targetUser
+        : "My Location (Solo)";
+
+    return Card(
+      elevation: 8,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0),
+        child: ListTile(
+          leading: CircleAvatar(
+            backgroundColor: isTrackingOthers
+                ? Colors.green
+                : Colors.blueAccent,
+            child: Icon(
+              isTrackingOthers ? Icons.navigation : Icons.person_pin_circle,
+              color: Colors.white,
             ),
-            title: Text(
-              displayName!,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 4),
-                if (isTrackingOthers)
-                  Text(
-                    "Distance: ${_distance < 1000 ? '${_distance.toStringAsFixed(0)} m' : '${(_distance / 1000).toStringAsFixed(2)} km'}",
-                    style: const TextStyle(color: Colors.black87),
-                  )
-                else
-                  const Text("Not tracking anyone else", style: TextStyle(color: Colors.grey)), 
-                const SizedBox(height: 2), 
+          ),
+          title: Text(
+            displayName!,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 4),
+              if (isTrackingOthers)
                 Text(
-                  "Lat: ${displayLocation.latitude.toStringAsFixed(5)}, Lng: ${displayLocation.longitude.toStringAsFixed(5)}",
-                  style: TextStyle(fontSize: 11, color: Colors.grey[600], fontFamily: 'monospace'),
+                  "Distance: ${provider.distance < 1000 ? '${provider.distance.toStringAsFixed(0)} m' : '${(provider.distance / 1000).toStringAsFixed(2)} km'}",
+                  style: const TextStyle(color: Colors.black87),
+                )
+              else
+                const Text(
+                  "Not tracking anyone else",
+                  style: TextStyle(color: Colors.grey),
                 ),
-              ],
-            ),
-            trailing: Builder(
-              builder: (context) { 
-                return IconButton(
-                  icon: const Icon(Icons.people_alt_rounded, color: Colors.blueAccent),
-                  onPressed: () {
-                    Scaffold.of(context).openDrawer();
-                  },
-                );
-              },
-            ),
+              const SizedBox(height: 2),
+              Text(
+                "Lat: ${displayLocation.latitude.toStringAsFixed(5)}, Lng: ${displayLocation.longitude.toStringAsFixed(5)}",
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey[600],
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ],
+          ),
+          trailing: Builder(
+            builder: (context) {
+              return IconButton(
+                icon: const Icon(
+                  Icons.people_alt_rounded,
+                  color: Colors.blueAccent,
+                ),
+                onPressed: () {
+                  Scaffold.of(context).openDrawer();
+                },
+              );
+            },
           ),
         ),
       ),

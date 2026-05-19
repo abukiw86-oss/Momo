@@ -1,12 +1,19 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
-// import 'package:firebase_database/firebase_database.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:gps_tracker/maps.dart'; 
+import 'config/imports.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    print('Error loading .env file: $e');
+  }
   await Firebase.initializeApp();
-  runApp(const MyApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (context) => TrackingProvider(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -16,12 +23,12 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'GPS Tracker Init',
+      title: 'Momo',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'GPS Tracker Home'),
+      home: const MyHomePage(title: 'Team Momo'),
     );
   }
 }
@@ -45,8 +52,8 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _handleLocationAccess() async {
     bool serviceEnabled;
-    LocationPermission permission; 
-    
+    LocationPermission permission;
+
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       await _showPermissionDialog(
@@ -55,12 +62,12 @@ class _MyHomePageState extends State<MyHomePage> {
         onConfirm: () => Geolocator.openLocationSettings(),
       );
       return;
-    } 
+    }
     permission = await Geolocator.checkPermission();
 
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) { 
+      if (permission == LocationPermission.denied) {
         _showPermissionDialog(
           title: "Permission Required",
           content: "This app needs location access to track your journey.",
@@ -70,20 +77,19 @@ class _MyHomePageState extends State<MyHomePage> {
       }
     }
 
-    if (permission == LocationPermission.deniedForever) { 
+    if (permission == LocationPermission.deniedForever) {
       await _showPermissionDialog(
         title: "Permission Permanently Denied",
-        content: "You have disabled location permissions. Please enable them in app settings to continue.",
+        content:
+            "You have disabled location permissions. Please enable them in app settings to continue.",
         onConfirm: () => Geolocator.openAppSettings(),
       );
       return;
     }
 
-    // 3. Success - Permission granted
     setState(() => _isLoading = false);
   }
 
-  // Helper to show a clean explanation dialog
   Future<void> _showPermissionDialog({
     required String title,
     required String content,
@@ -111,11 +117,7 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(), // Loading screen while checking
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     return const FreeTrackerMap();
   }
