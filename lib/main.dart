@@ -119,6 +119,6 @@ class _MyHomePageState extends State<MyHomePage> {
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    return const FreeTrackerMap();
+    return const SplashScreen();
   }
 }

@@ -31,23 +31,6 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
     });
   }
 
-  void _handleSearchSubmit(String val) async {
-    if (val.isEmpty) return;
-    final provider = Provider.of<TrackingProvider>(context, listen: false);
-    final target = await provider.searchPlace(val);
-    if (!mounted) return;
-    if (target != null) {
-      _mapController.move(target, 16);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Place '$val' not found in database"),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    }
-  }
-
   void _showNameDialog() {
     TextEditingController controller = TextEditingController();
     showDialog(
@@ -78,6 +61,23 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
         ],
       ),
     );
+  }
+
+  void _handleSearchSubmit(String val) async {
+    if (val.isEmpty) return;
+    final provider = Provider.of<TrackingProvider>(context, listen: false);
+    final target = await provider.searchPlace(val);
+    if (!mounted) return;
+    if (target != null) {
+      _mapController.move(target, 16);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Place '$val' not found in database"),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
   }
 
   void _joinSession(String sessionId, bool isCreatingSession) async {

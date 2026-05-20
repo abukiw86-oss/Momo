@@ -42,7 +42,6 @@ class TrackingProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Initial setup: determines current position and checks saved username.
   Future<void> initializeTracking({
     required Function(LatLng) onLocationLoaded,
     required VoidCallback onNameRequired,
@@ -71,7 +70,6 @@ class TrackingProvider extends ChangeNotifier {
     }
   }
 
-  /// Saves the username, persists it, and begins local tracking.
   Future<void> setSavedUserName(String name) async {
     if (name.isEmpty) return;
     _userName = name;

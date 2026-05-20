@@ -12,4 +12,4 @@ export 'package:share_plus/share_plus.dart';
 export 'package:provider/provider.dart';
 export 'package:flutter_dotenv/flutter_dotenv.dart';
 export 'package:gps_tracker/providers/tracking_provider.dart';
-
+export 'package:gps_tracker/splash_screen.dart';
