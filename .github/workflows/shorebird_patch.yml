@@ -1,0 +1,33 @@
+name: Automated Shorebird Patch
+ 
+on:
+  push:
+    branches:
+      - main  
+
+jobs:
+  deploy_patch:
+    runs-on: ubuntu-latest  
+
+    steps: 
+      - name: 📚 Checkout Repository
+        uses: actions/checkout@v4
+ 
+      - name: ☕ Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+ 
+      - name: Setup Shorebird
+        uses: shorebirdtech/setup-shorebird@v1
+        with:
+          cache: true 
+
+      - name: Deploy Patch to Android
+        uses: shorebirdtech/shorebird-patch@v1
+        with:
+          platform: android
+          release-version: latest
+        env:
+          SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_API }} 

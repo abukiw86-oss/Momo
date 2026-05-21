@@ -17,6 +17,7 @@ class TrackingProvider extends ChangeNotifier {
   String _userName = "";
   String? _currentSessionId;
   bool _isSearching = false;
+  bool _isLoadingTeam = false;
   bool _isRequiredName = false;
 
   StreamSubscription<Position>? _positionSubscription;
@@ -32,6 +33,7 @@ class TrackingProvider extends ChangeNotifier {
   String? get currentSessionId => _currentSessionId;
   bool get isSearching => _isSearching;
   bool get isRequiredName => _isRequiredName;
+  bool get isLoadingTeam => _isLoadingTeam;
 
   void toggleSearching() {
     _isSearching = !_isSearching;
@@ -88,9 +90,7 @@ class TrackingProvider extends ChangeNotifier {
     startLocalTracking();
   }
 
-  /// Subscribes to device's location stream and pushes updates to Firebase.
   void startLocalTracking() {
-    // Cancel any existing subscription to prevent leaks
     _positionSubscription?.cancel();
 
     _positionSubscription =
@@ -104,6 +104,8 @@ class TrackingProvider extends ChangeNotifier {
           notifyListeners();
 
           if (_currentSessionId != null && _userName.isNotEmpty) {
+            _isLoadingTeam = false;
+            notifyListeners();
             FirebaseDatabase.instanceFor(
               app: Firebase.app(),
               databaseURL: _dbUrl,
@@ -116,11 +118,12 @@ class TrackingProvider extends ChangeNotifier {
         });
   }
 
-  /// Join or Create a session with 6-character room code.
   Future<bool> joinOrCreateSession(
     String sessionId, {
     required bool isCreatingSession,
   }) async {
+    _isLoadingTeam = true;
+    notifyListeners();
     final dbRef = FirebaseDatabase.instanceFor(
       app: Firebase.app(),
       databaseURL: _dbUrl,
@@ -129,11 +132,12 @@ class TrackingProvider extends ChangeNotifier {
     if (!isCreatingSession) {
       final snapshot = await dbRef.ref("sessions/$sessionId").get();
       if (!snapshot.exists) {
+        _isLoadingTeam = false;
+        notifyListeners();
         return false;
       }
     }
 
-    // Cancel old session subscription if any
     _sessionSubscription?.cancel();
 
     _currentSessionId = sessionId;
@@ -142,6 +146,7 @@ class TrackingProvider extends ChangeNotifier {
     _routePoints.clear();
     _distance = 0.0;
     _isSearching = false;
+    _isLoadingTeam = false;
     notifyListeners();
 
     if (_myLocation != null && _userName.isNotEmpty) {
@@ -170,7 +175,7 @@ class TrackingProvider extends ChangeNotifier {
             });
 
             _teamLocations = newTeam;
-
+            _isLoadingTeam = false;
             if (_targetUser == null && newTeam.isNotEmpty) {
               _targetUser = newTeam.keys.first;
             }
@@ -186,7 +191,6 @@ class TrackingProvider extends ChangeNotifier {
     return true;
   }
 
-  /// Selects a member from the team and triggers road routing.
   void selectTargetUser(String name) {
     if (!_teamLocations.containsKey(name)) return;
     _routePoints.clear();
@@ -195,7 +199,6 @@ class TrackingProvider extends ChangeNotifier {
     updateRoadRoute(_teamLocations[name]!);
   }
 
-  /// Calculates driving route and distance using OSRM API.
   Future<void> updateRoadRoute(LatLng destination) async {
     if (_myLocation == null) return;
 
@@ -222,8 +225,6 @@ class TrackingProvider extends ChangeNotifier {
     }
   }
 
-  /// Searches the database `/places` for a matching place.
-  /// Returns the coordinates if found, otherwise null.
   Future<LatLng?> searchPlace(String query) async {
     if (query.isEmpty) return null;
 

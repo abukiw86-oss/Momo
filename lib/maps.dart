@@ -121,7 +121,7 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                   subtitle: const Text("Share download link"),
                   onTap: () {
                     const String appLink =
-                        "https://github.com/abukiw86-oss/Momo/releases";
+                        "https://github.com/abukiw86-oss/Momo/releases/latest";
                     Share.share(
                       "Hey! Download this GPS Tracker app so we can see each other on the map: $appLink",
                       subject: "Download GPS Tracker",
@@ -136,16 +136,20 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
             title: provider.isSearching
                 ? TextField(
                     autofocus: true,
-                    style: const TextStyle(color: Colors.white),
+                    style: const TextStyle(color: Colors.black87),
                     decoration: const InputDecoration(
                       hintText: "Search places...",
-                      hintStyle: TextStyle(color: Colors.white),
+                      hintStyle: TextStyle(color: Colors.black),
                       border: InputBorder.none,
                     ),
                     onSubmitted: (val) => _handleSearchSubmit(val),
                   )
                 : Text(
-                    "Hi, ${provider.userName} ${provider.currentSessionId != null ? '(${provider.currentSessionId})' : ''}",
+                    "Hi, ${provider.userName} ${(provider.currentSessionId != null)
+                        ? '(${provider.currentSessionId})'
+                        : (provider.isLoadingTeam)
+                        ? '(Loading Team Session...)'
+                        : ''}",
                   ),
             actions: [
               IconButton(
@@ -160,6 +164,7 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
               ),
             ],
           ),
+
           body: Stack(
             children: [
               FlutterMap(
@@ -180,8 +185,14 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                       polylines: [
                         Polyline(
                           points: provider.routePoints,
-                          color: Colors.red,
+                          color: provider.isSearching
+                              ? Colors.red
+                              : Colors.blue,
                           strokeWidth: 4,
+                          pattern: StrokePattern.dashed(
+                            segments: [10, 5],
+                            patternFit: PatternFit.extendFinalDash,
+                          ),
                         ),
                       ],
                     ),
@@ -202,29 +213,10 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                           height: 80,
                           child: Column(
                             children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isTracked
-                                      ? Colors.green
-                                      : Colors.black54,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  entry.key,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                  ),
-                                ),
-                              ),
-                              Icon(
-                                Icons.location_on,
-                                size: isTracked ? 45 : 35,
-                                color: isTracked ? Colors.green : Colors.red,
+                              _markerWidget(
+                                entry.key,
+                                isTracked ? Colors.green : Colors.red,
+                                logoUrl: 'assets/images/appa.jpeg',
                               ),
                             ],
                           ),
@@ -264,14 +256,55 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
     );
   }
 
-  Widget _markerWidget(String label, Color color) {
+  Widget _markerWidget(
+    String label,
+    Color color, {
+    String logoUrl = 'assets/images/momo.png',
+  }) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          color: Colors.white,
-          child: Text(label, style: const TextStyle(fontSize: 18)),
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(Icons.location_on, color: color, size: 70),
+            Positioned(
+              top: 6,
+              child: CircleAvatar(
+                radius: 18,
+                backgroundColor: Colors.white,
+                child: CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Colors.transparent,
+                  backgroundImage: AssetImage(logoUrl),
+                ),
+              ),
+            ),
+          ],
         ),
-        Icon(Icons.location_on, color: color, size: 50),
+        const SizedBox(height: 4),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(4),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -326,7 +359,7 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                             ClipboardData(text: provider.currentSessionId!),
                           );
                           Share.share(
-                            "Track me on GPS Tracker! Group Code: ${provider.currentSessionId}",
+                            "Track me on Momo! Group Code: ${provider.currentSessionId} \n Get the app here: https://github.com/abukiw86-oss/Momo/releases/latest",
                           );
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text("Code copied!")),
@@ -351,7 +384,9 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                       .toUpperCase();
                   Navigator.pop(context);
                   _joinSession(newId, true);
-                  Share.share("Join my location group! Code: $newId");
+                  Share.share(
+                    "Join my location group! Code: $newId \n Get the app here: https://github.com/abukiw86-oss/Momo/releases/latest",
+                  );
                 },
               ),
               const Padding(

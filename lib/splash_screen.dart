@@ -15,7 +15,7 @@ class _SplashScreenState extends State<SplashScreen>
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
   late Animation<double> _pulseAnimation;
-
+  TrackingProvider _trackingProvider = TrackingProvider();
   @override
   void initState() {
     super.initState();
@@ -52,13 +52,13 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _startSplashSequence() async {
-    final provider = Provider.of<TrackingProvider>(context, listen: false);
+    _trackingProvider = Provider.of<TrackingProvider>(context, listen: false);
     await Future.wait([
-      provider.initialData(onNameRequired: _showNameDialog),
-      provider.initializeTracking(),
-      _controller.forward(), 
-    ]); 
-    if (!provider.isRequiredName) {
+      _trackingProvider.initialData(onNameRequired: _showNameDialog),
+      _trackingProvider.initializeTracking(),
+      _controller.forward(),
+    ]);
+    if (!_trackingProvider.isRequiredName) {
       _navigateToNext();
     }
   }
@@ -159,7 +159,7 @@ class _SplashScreenState extends State<SplashScreen>
                       ),
                       const SizedBox(height: 60),
 
-                      _buildLoadingIndicator(),
+                      _buildLoadingIndicator(_trackingProvider),
                     ],
                   ),
                 ),
@@ -208,7 +208,6 @@ class _SplashScreenState extends State<SplashScreen>
                   label: 'Momo',
                   isMomo: true,
                 ),
-
                 ..._buildConnectionLines(),
               ],
             ),
@@ -282,7 +281,7 @@ class _SplashScreenState extends State<SplashScreen>
     ];
   }
 
-  Widget _buildLoadingIndicator() {
+  Widget _buildLoadingIndicator(TrackingProvider provider) {
     return Column(
       children: [
         const SizedBox(
@@ -295,7 +294,7 @@ class _SplashScreenState extends State<SplashScreen>
         ),
         const SizedBox(height: 16),
         Text(
-          'Connecting friends...',
+          provider.isRequiredName ? 'Ready Setup...' : 'Connecting friends...',
           style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
         ),
       ],
