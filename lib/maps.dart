@@ -10,57 +10,13 @@ class FreeTrackerMap extends StatefulWidget {
 
 class _FreeTrackerMapState extends State<FreeTrackerMap> {
   final MapController _mapController = MapController();
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = Provider.of<TrackingProvider>(context, listen: false);
-      provider.initializeTracking(
-        onLocationLoaded: (location) {
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted) {
-              _mapController.move(location, 15);
-            }
-          });
-        },
-        onNameRequired: () {
-          _showNameDialog();
-        },
-      );
+      _mapController.move(provider.myLocation!, 15);
     });
-  }
-
-  void _showNameDialog() {
-    TextEditingController controller = TextEditingController();
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text("Enter Your Name"),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: "e.g. Abuki"),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              if (controller.text.isNotEmpty) {
-                final provider = Provider.of<TrackingProvider>(
-                  context,
-                  listen: false,
-                );
-                await provider.setSavedUserName(controller.text);
-                if (context.mounted) {
-                  Navigator.pop(context);
-                }
-              }
-            },
-            child: const Text("Save"),
-          ),
-        ],
-      ),
-    );
   }
 
   void _handleSearchSubmit(String val) async {

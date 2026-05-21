@@ -52,25 +52,49 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _startSplashSequence() async {
+    final provider = Provider.of<TrackingProvider>(context, listen: false);
     await Future.wait([
-      _controller.forward(),
-      _preloadAppData(),
-      Future.delayed(const Duration(seconds: 4)),
-    ]);
-
-    if (mounted) {
+      provider.initialData(onNameRequired: _showNameDialog),
+      provider.initializeTracking(),
+      _controller.forward(), 
+    ]); 
+    if (!provider.isRequiredName) {
       _navigateToNext();
     }
   }
 
-  Future<void> _preloadAppData() async {
-    // await Future.wait([
-    //   _loadUserProfile(),
-    //   _loadFriendsList(),
-    //   _loadMapSettings(),
-    //   _loadCachedLocations(),
-    // ]);
+  void _showNameDialog() {
+    TextEditingController controller = TextEditingController();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text("Enter Your Name"),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: "e.g. Abuki"),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              if (controller.text.isNotEmpty) {
+                final provider = Provider.of<TrackingProvider>(
+                  context,
+                  listen: false,
+                );
+                await provider.setSavedUserName(controller.text);
+                if (context.mounted) {
+                  Navigator.pop(context);
+                }
+              }
+            },
+            child: const Text("Save"),
+          ),
+        ],
+      ),
+    );
   }
+
   void _navigateToNext() {
     Navigator.of(
       context,
@@ -181,7 +205,8 @@ class _SplashScreenState extends State<SplashScreen>
                 _buildPulsingMarker(
                   position: const Alignment(-0.1, 0.4),
                   color: const Color(0xFF76FF03),
-                  label: 'Sarah',
+                  label: 'Momo',
+                  isMomo: true,
                 ),
 
                 ..._buildConnectionLines(),
@@ -197,6 +222,7 @@ class _SplashScreenState extends State<SplashScreen>
     required Alignment position,
     required Color color,
     required String label,
+    bool isMomo = false,
   }) {
     return Align(
       alignment: position,
@@ -209,8 +235,8 @@ class _SplashScreenState extends State<SplashScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 20,
-                  height: 20,
+                  width: 30,
+                  height: 30,
                   decoration: BoxDecoration(
                     color: color,
                     shape: BoxShape.circle,
@@ -222,11 +248,16 @@ class _SplashScreenState extends State<SplashScreen>
                       ),
                     ],
                   ),
-                  child: const Icon(
-                    Icons.person_pin_circle,
-                    color: Colors.white,
-                    size: 16,
-                  ),
+                  child: isMomo
+                      ? const CircleAvatar(
+                          backgroundColor: Colors.transparent,
+                          backgroundImage: AssetImage('assets/images/momo.png'),
+                        )
+                      : const Icon(
+                          Icons.person_pin_circle,
+                          color: Colors.white,
+                          size: 16,
+                        ),
                 ),
                 const SizedBox(height: 4),
                 Text(

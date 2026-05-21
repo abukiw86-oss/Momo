@@ -17,6 +17,7 @@ class TrackingProvider extends ChangeNotifier {
   String _userName = "";
   String? _currentSessionId;
   bool _isSearching = false;
+  bool _isRequiredName = false;
 
   StreamSubscription<Position>? _positionSubscription;
   StreamSubscription<DatabaseEvent>? _sessionSubscription;
@@ -30,8 +31,8 @@ class TrackingProvider extends ChangeNotifier {
   String get userName => _userName;
   String? get currentSessionId => _currentSessionId;
   bool get isSearching => _isSearching;
+  bool get isRequiredName => _isRequiredName;
 
-  // Setters & UI state controls
   void toggleSearching() {
     _isSearching = !_isSearching;
     notifyListeners();
@@ -42,10 +43,25 @@ class TrackingProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> initializeTracking({
-    required Function(LatLng) onLocationLoaded,
-    required VoidCallback onNameRequired,
-  }) async {
+  Future<void> initialData({required VoidCallback onNameRequired}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String? savedName = prefs.getString('user_name');
+      if (savedName == null) {
+        onNameRequired();
+        _isRequiredName = true;
+        notifyListeners();
+      } else {
+        _userName = savedName;
+        notifyListeners();
+        startLocalTracking();
+      }
+    } catch (e) {
+      debugPrint("Error in loading data: $e");
+    }
+  }
+
+  Future<void> initializeTracking() async {
     try {
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -53,18 +69,6 @@ class TrackingProvider extends ChangeNotifier {
       LatLng currentLatLng = LatLng(position.latitude, position.longitude);
       _myLocation = currentLatLng;
       notifyListeners();
-
-      onLocationLoaded(currentLatLng);
-
-      final prefs = await SharedPreferences.getInstance();
-      String? savedName = prefs.getString('user_name');
-      if (savedName == null) {
-        onNameRequired();
-      } else {
-        _userName = savedName;
-        notifyListeners();
-        startLocalTracking();
-      }
     } catch (e) {
       debugPrint("Error in initializeTracking: $e");
     }
