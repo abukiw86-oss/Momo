@@ -121,7 +121,7 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                   subtitle: const Text("Share download link"),
                   onTap: () {
                     const String appLink =
-                        "https://github.com/abukiw86-oss/GPS-Team-Tracker/releases";
+                        "https://github.com/abukiw86-oss/Momo/releases";
                     Share.share(
                       "Hey! Download this GPS Tracker app so we can see each other on the map: $appLink",
                       subject: "Download GPS Tracker",

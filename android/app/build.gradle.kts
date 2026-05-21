@@ -1,15 +1,25 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
     id("kotlin-android") 
     id("dev.flutter.flutter-gradle-plugin") 
 }
+ 
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.inputStream().use { localProperties.load(it) }
+}
 
 dependencies { 
-  implementation(platform("com.google.firebase:firebase-bom:34.12.0"))
-  implementation("com.google.firebase:firebase-analytics")
-  implementation("com.google.firebase:firebase-database")  
+    implementation(platform("com.google.firebase:firebase-bom:34.12.0"))
+    implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-database")  
 }
+
 android {
     namespace = "com.example.gps_tracker"
     compileSdk = flutter.compileSdkVersion
@@ -31,10 +41,30 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
+ 
+    signingConfigs {
+        create("release") {
+            keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS") ?: ""
+            keyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD") ?: ""
+            storePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD") ?: ""
+            
+            val keystorePath = localProperties.getProperty("RELEASE_STORE_FILE")
+            if (!keystorePath.isNullOrEmpty()) {
+                storeFile = file(keystorePath)
+            }
+        }
+    }
 
     buildTypes {
         release { 
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
+            
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                file("proguard-rules.pro")
+            )
         }
     }
 }

@@ -1,28 +1,12 @@
-# Flutter specific
+# Basic Flutter rules
 -keep class io.flutter.app.** { *; }
--keep class io.flutter.plugin.** { *; }
--keep class io.flutter.util.** { *; }
--keep class io.flutter.view.** { *; }
--keep class io.flutter.** { *; }
--keep class io.flutter.plugins.** { *; }
+-keep class io.flutter.plugin.**  { *; }
+-keep class io.flutter.util.**  { *; }
+-keep class io.flutter.view.**  { *; }
+-keep class io.flutter.**  { *; }
+-keep class io.flutter.plugins.**  { *; }
+# Ignore missing Play Core classes referenced internally by the Flutter Engine
+-dontwarn com.google.android.play.core.**
 
-# Keep your app's classes
--keep class com.example.gps_tracker.** { *; }
-
-# Firebase (if using)
--keep class com.google.firebase.** { *; }
--keep class com.google.android.gms.** { *; }
-
-# Google Maps (if using)
--keep class com.google.android.gms.maps.** { *; }
-
-# Location services
--keep class com.google.android.gms.location.** { *; }
-
-# Remove logging in release
--assumenosideeffects class android.util.Log {
-    public static boolean isLoggable(java.lang.String, int);
-    public static int v(...);
-    public static int d(...);
-    public static int i(...);
-}
+# If R8 still complains about specific missing dynamic feature classes, keep them safe:
+-keep class io.flutter.embedding.engine.deferredcomponents.** { *; }
