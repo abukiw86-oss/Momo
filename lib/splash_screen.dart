@@ -54,45 +54,12 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _startSplashSequence() async {
     _trackingProvider = Provider.of<TrackingProvider>(context, listen: false);
     await Future.wait([
-      _trackingProvider.initialData(onNameRequired: _showNameDialog),
       _trackingProvider.initializeTracking(),
       _controller.forward(),
     ]);
     if (!_trackingProvider.isRequiredName) {
       _navigateToNext();
     }
-  }
-
-  void _showNameDialog() {
-    TextEditingController controller = TextEditingController();
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text("Enter Your Name"),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: "e.g. Abuki"),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              if (controller.text.isNotEmpty) {
-                final provider = Provider.of<TrackingProvider>(
-                  context,
-                  listen: false,
-                );
-                await provider.setSavedUserName(controller.text);
-                if (context.mounted) {
-                  Navigator.pop(context);
-                }
-              }
-            },
-            child: const Text("Save"),
-          ),
-        ],
-      ),
-    );
   }
 
   void _navigateToNext() {
