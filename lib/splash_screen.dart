@@ -21,6 +21,7 @@ class _SplashScreenState extends State<SplashScreen>
     super.initState();
     _setupAnimations();
     _startSplashSequence();
+    HandleLocationAccess().handleLocationAccess();
   }
 
   void _setupAnimations() {
@@ -54,10 +55,11 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _startSplashSequence() async {
     _trackingProvider = Provider.of<TrackingProvider>(context, listen: false);
     await Future.wait([
+      HandleLocationAccess().handleLocationAccess(),
       _trackingProvider.initializeTracking(),
       _controller.forward(),
     ]);
-    if (!_trackingProvider.isRequiredName) {
+    if (context.mounted) {
       _navigateToNext();
     }
   }
@@ -77,7 +79,6 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-
     return Scaffold(
       body: Container(
         width: double.infinity,
@@ -102,7 +103,6 @@ class _SplashScreenState extends State<SplashScreen>
                     children: [
                       _buildMapWithFriends(size),
                       const SizedBox(height: 40),
-
                       const Text(
                         'Momo',
                         style: TextStyle(
@@ -125,7 +125,6 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                       ),
                       const SizedBox(height: 60),
-
                       _buildLoadingIndicator(_trackingProvider),
                     ],
                   ),
@@ -157,7 +156,6 @@ class _SplashScreenState extends State<SplashScreen>
             child: Stack(
               children: [
                 CustomPaint(painter: MapGridPainter(), size: Size.infinite),
-
                 _buildPulsingMarker(
                   position: const Alignment(-0.4, -0.2),
                   color: const Color(0xFFFF6D00),
@@ -261,7 +259,7 @@ class _SplashScreenState extends State<SplashScreen>
         ),
         const SizedBox(height: 16),
         Text(
-          provider.isRequiredName ? 'Ready Setup...' : 'Connecting friends...',
+          provider.isRequiredData ? 'Ready Setup...' : 'Connecting friends...',
           style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
         ),
       ],
