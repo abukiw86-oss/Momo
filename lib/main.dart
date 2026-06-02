@@ -3,6 +3,8 @@ import 'config/imports.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // await DeviceDetect().detectRoot();
+
+  await HandleLocationAccess().handleLocationAccess();
   try {
     await dotenv.load(fileName: ".env");
   } catch (e) {

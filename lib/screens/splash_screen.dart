@@ -1,4 +1,4 @@
-import 'config/imports.dart';
+import '/config/imports.dart';
 
 import 'dart:async';
 
@@ -20,8 +20,9 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
     _setupAnimations();
-    _startSplashSequence();
-    HandleLocationAccess().handleLocationAccess();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startSplashSequence();
+    });
   }
 
   void _setupAnimations() {
@@ -52,18 +53,16 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
-  Future<void> _startSplashSequence() async {
-    _trackingProvider = Provider.of<TrackingProvider>(context, listen: false);
-    await Future.wait([
-      HandleLocationAccess().handleLocationAccess(),
-      _trackingProvider.initializeTracking(),
-      _controller.forward(),
-    ]);
-    if (context.mounted) {
-      _navigateToNext();
-    }
+Future<void> _startSplashSequence() async { 
+  _controller.forward();
+ 
+  await _trackingProvider.initializeTracking(); 
+  await Future.delayed(const Duration(seconds: 3));
+ 
+  if (mounted) {
+    _navigateToNext();
   }
-
+}
   void _navigateToNext() {
     Navigator.of(
       context,

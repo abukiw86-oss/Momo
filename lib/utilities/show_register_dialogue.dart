@@ -52,14 +52,18 @@ class ShowRegisterDialogue {
                               email: emailController.text,
                               isLogin: true,
                             );
-                            if (context.mounted) {
-                              Navigator.pop(context);
+                            // ✅ Pop using root navigator
+                            if (currentContext?.mounted ?? false) {
+                              Navigator.of(
+                                currentContext!,
+                                rootNavigator: true,
+                              ).pop();
                             }
                           }
                         },
                         onSwitch: () {
                           dialogSetState(() {
-                            isLogin = false; // Switch to register
+                            isLogin = false;
                           });
                         },
                       )
@@ -77,14 +81,18 @@ class ShowRegisterDialogue {
                               email: emailController.text,
                               isLogin: false,
                             );
-                            if (context.mounted) {
-                              Navigator.pop(context);
+                            // ✅ Pop using root navigator
+                            if (currentContext?.mounted ?? false) {
+                              Navigator.of(
+                                currentContext!,
+                                rootNavigator: true,
+                              ).pop();
                             }
                           }
                         },
                         onSwitch: () {
                           dialogSetState(() {
-                            isLogin = true; // Switch to login
+                            isLogin = true;
                           });
                         },
                       ),

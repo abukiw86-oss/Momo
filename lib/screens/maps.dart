@@ -1,5 +1,5 @@
-import 'config/imports.dart';
-import 'package:latlong2/latlong.dart';
+import '../config/imports.dart';
+import 'package:maplibre_gl/maplibre_gl.dart';
 
 class FreeTrackerMap extends StatefulWidget {
   const FreeTrackerMap({super.key});
@@ -9,64 +9,83 @@ class FreeTrackerMap extends StatefulWidget {
 }
 
 class _FreeTrackerMapState extends State<FreeTrackerMap> {
-  final MapController _mapController = MapController();
+  MapLibreMapController? _mapController;
+  bool _isStyleLoaded = false;
+  static const double zoom = 17.8;
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = Provider.of<TrackingProvider>(context, listen: false);
-      provider.initialData(onNameRequired: _showNameDialog);
-      _mapController.move(provider.myLocation!, 15);
+      provider.initialData(onDataRequired: ShowRegisterDialogue().showDialog);
     });
   }
 
-  void _handleSearchSubmit(String val) async {
-    if (val.isEmpty) return;
+  void _onMapCreated(MapLibreMapController controller) {
+    _mapController = controller;
+  }
+
+  void _onStyleLoaded() {
+    setState(() {
+      _isStyleLoaded = true;
+    });
+    _enable3dBuildings();
+    _updateMapElements();
+  }
+
+  void _enable3dBuildings() {
+    if (_mapController == null) return;
+    _mapController!.addFillExtrusionLayer(
+      "openfreemap",
+      "3d-buildings-layer",
+      const FillExtrusionLayerProperties(
+        fillExtrusionColor: "#ffffff",
+        fillExtrusionHeight: ["get", "render_height"],
+        fillExtrusionBase: ["get", "render_min_height"],
+        fillExtrusionOpacity: 1,
+      ),
+    );
+  }
+
+  void _updateMapElements() {
+    if (_mapController == null || !_isStyleLoaded) return;
     final provider = Provider.of<TrackingProvider>(context, listen: false);
-    final target = await provider.searchPlace(val);
-    if (!mounted) return;
-    if (target != null) {
-      _mapController.move(target, 16);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Place '$val' not found in database"),
-          backgroundColor: Colors.orange,
+
+    _mapController!.clearLines();
+    _mapController!.clearSymbols();
+
+    if (provider.routePoints.isNotEmpty) {
+      List<LatLng> mapLibrePoints = provider.routePoints
+          .map((p) => LatLng(p.latitude, p.longitude))
+          .toList();
+
+      _mapController!.addLine(
+        LineOptions(
+          geometry: mapLibrePoints,
+          lineColor: "#0000FF",
+          lineWidth: 4.0,
+          lineOpacity: 0.8,
         ),
       );
     }
-  }
 
-  void _showNameDialog() {
-    TextEditingController controller = TextEditingController();
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text("Enter Your Name"),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: "e.g. Abuki"),
+    provider.teamLocations.forEach((userId, userData) {
+      bool isTracked = userId == provider.targetUser;
+
+      _mapController!.addSymbol(
+        SymbolOptions(
+          geometry: LatLng(userData['lat'], userData['lng']),
+          iconImage: isTracked ? "custom-marker" : "friend-marker",
+          textField: userData['name'] ?? 'Unknown',
+          textColor: isTracked ? "#000000" : "#FFFFFF",
+          textOffset: const Offset(0, 2.5),
+          textAnchor: "top",
+          textSize: 14.0,
+          iconColor: isTracked ? "#000000" : "#00000ff",
+          iconSize: 2,
         ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              if (controller.text.isNotEmpty) {
-                final provider = Provider.of<TrackingProvider>(
-                  context,
-                  listen: false,
-                );
-                await provider.setSavedUserName(controller.text);
-                if (context.mounted) {
-                  Navigator.pop(context);
-                }
-              }
-            },
-            child: const Text("Save"),
-          ),
-        ],
-      ),
-    );
+      );
+    });
   }
 
   void _joinSession(String sessionId, bool isCreatingSession) async {
@@ -90,7 +109,28 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
   Widget build(BuildContext context) {
     return Consumer<TrackingProvider>(
       builder: (context, provider, child) {
+        if (_mapController != null && _isStyleLoaded) {
+          _updateMapElements();
+
+          if (provider.myLocation != null) {
+            _mapController!.animateCamera(
+              CameraUpdate.newCameraPosition(
+                CameraPosition(
+                  target: LatLng(
+                    provider.myLocation!.latitude,
+                    provider.myLocation!.longitude,
+                  ),
+                  zoom: zoom,
+                  tilt: 95.0,
+                  bearing: -10.0,
+                ),
+              ),
+            );
+          }
+        }
+
         return Scaffold(
+          extendBodyBehindAppBar: true,
           drawer: Drawer(
             width: MediaQuery.of(context).size.width * 0.85,
             shape: const RoundedRectangleBorder(
@@ -100,9 +140,20 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
               children: [
                 Center(
                   child: UserAccountsDrawerHeader(
+                    onDetailsPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ChangeLogoScreen(),
+                        ),
+                      );
+                    },
                     currentAccountPicture: CircleAvatar(
+                      radius: 40,
                       backgroundColor: Colors.transparent,
-                      backgroundImage: AssetImage('assets/images/momo.png'),
+                      backgroundImage: const AssetImage(
+                        'assets/images/momo.png',
+                      ),
                     ),
                     accountName: Text(provider.userName),
                     accountEmail: Text(
@@ -124,22 +175,28 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                           padding: EdgeInsets.zero,
                           itemCount: provider.teamLocations.length,
                           itemBuilder: (context, index) {
-                            String name = provider.teamLocations.keys.elementAt(
-                              index,
-                            );
+                            String userId = provider.teamLocations.keys
+                                .elementAt(index);
+                            Map<String, dynamic> userData =
+                                provider.teamLocations[userId]!;
                             return ListTile(
-                              title: Text(name),
-                              leading: CircleAvatar(
+                              title: Text(userData['name'] ?? 'Unknown'),
+                              subtitle: Text(userData['email'] ?? 'No email'),
+                              leading: const CircleAvatar(
                                 backgroundColor: Colors.transparent,
                                 backgroundImage: AssetImage(
                                   'assets/images/momo.png',
                                 ),
                               ),
                               onTap: () {
-                                provider.selectTargetUser(name);
-                                final targetLoc = provider.teamLocations[name];
-                                if (targetLoc != null) {
-                                  _mapController.move(targetLoc, 15);
+                                provider.selectTargetUser(userId);
+                                if (_mapController != null) {
+                                  _mapController!.animateCamera(
+                                    CameraUpdate.newLatLngZoom(
+                                      LatLng(userData['lat'], userData['lng']),
+                                      zoom,
+                                    ),
+                                  );
                                 }
                                 Navigator.pop(context);
                               },
@@ -166,29 +223,22 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
             ),
           ),
           appBar: AppBar(
-            title: provider.isSearching
-                ? TextField(
-                    autofocus: true,
-                    style: const TextStyle(color: Colors.black87),
-                    decoration: const InputDecoration(
-                      hintText: "Search places...",
-                      hintStyle: TextStyle(color: Colors.black),
-                      border: InputBorder.none,
-                    ),
-                    onSubmitted: (val) => _handleSearchSubmit(val),
-                  )
-                : Text(
-                    "Hi, ${provider.userName} ${(provider.currentSessionId != null)
-                        ? '(${provider.currentSessionId})'
-                        : (provider.isLoadingTeam)
-                        ? '(Loading Team Session...)'
-                        : ''}",
-                  ),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            title: Text(
+              "Hi, ${provider.userName} ${(provider.currentSessionId != null)
+                  ? '(${provider.currentSessionId})'
+                  : (provider.isLoadingTeam)
+                  ? '(Loading Session...)'
+                  : ''}",
+            ),
             actions: [
               IconButton(
-                icon: Icon(provider.isSearching ? Icons.close : Icons.search),
+                icon: const Icon(Icons.search),
                 onPressed: () {
-                  provider.toggleSearching();
+                  ShowSnackbar().show(
+                    message: "Searching will come in the next update!",
+                  );
                 },
               ),
               IconButton(
@@ -197,67 +247,23 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
               ),
             ],
           ),
-
           body: Stack(
             children: [
-              FlutterMap(
-                mapController: _mapController,
-                options: MapOptions(
-                  initialCenter:
-                      provider.myLocation ?? const LatLng(9.03, 38.74),
-                  initialZoom: 15,
+              MapLibreMap(
+                initialCameraPosition: CameraPosition(
+                  target: provider.myLocation != null
+                      ? LatLng(
+                          provider.myLocation!.latitude,
+                          provider.myLocation!.longitude,
+                        )
+                      : const LatLng(9.03, 38.74),
+                  zoom: zoom,
                 ),
-                children: [
-                  TileLayer(
-                    urlTemplate:
-                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.momo.gps',
-                  ),
-                  if (provider.routePoints.isNotEmpty)
-                    PolylineLayer(
-                      polylines: [
-                        Polyline(
-                          points: provider.routePoints,
-                          color: provider.isSearching
-                              ? Colors.red
-                              : Colors.blue,
-                          strokeWidth: 4,
-                          pattern: StrokePattern.dashed(
-                            segments: [10, 5],
-                            patternFit: PatternFit.extendFinalDash,
-                          ),
-                        ),
-                      ],
-                    ),
-                  MarkerLayer(
-                    markers: [
-                      if (provider.myLocation != null)
-                        Marker(
-                          point: provider.myLocation!,
-                          width: 80,
-                          height: 80,
-                          child: _markerWidget("Me", Colors.blue),
-                        ),
-                      ...provider.teamLocations.entries.map((entry) {
-                        bool isTracked = entry.key == provider.targetUser;
-                        return Marker(
-                          point: entry.value,
-                          width: 80,
-                          height: 80,
-                          child: Column(
-                            children: [
-                              _markerWidget(
-                                entry.key,
-                                isTracked ? Colors.green : Colors.red,
-                                logoUrl: 'assets/images/appa.jpeg',
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-                    ],
-                  ),
-                ],
+                styleString: "https://tiles.openfreemap.org/styles/liberty",
+                onMapCreated: _onMapCreated,
+                onStyleLoadedCallback: _onStyleLoaded,
+                myLocationEnabled: true,
+                myLocationTrackingMode: MyLocationTrackingMode.trackingGps,
               ),
               Positioned(
                 bottom: 20,
@@ -272,12 +278,21 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                   backgroundColor: Colors.blueAccent,
                   child: const Icon(Icons.my_location, color: Colors.white),
                   onPressed: () {
-                    if (provider.myLocation != null) {
-                      _mapController.move(provider.myLocation!, 17);
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Locating you...")),
+                    if (provider.myLocation != null && _mapController != null) {
+                      _mapController!.animateCamera(
+                        CameraUpdate.newCameraPosition(
+                          CameraPosition(
+                            target: LatLng(
+                              provider.myLocation!.latitude,
+                              provider.myLocation!.longitude,
+                            ),
+                            zoom: zoom,
+                            tilt: 60.0,
+                          ),
+                        ),
                       );
+                    } else {
+                      ShowSnackbar().show(message: "Locating you...");
                     }
                   },
                 ),
@@ -286,59 +301,6 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
           ),
         );
       },
-    );
-  }
-
-  Widget _markerWidget(
-    String label,
-    Color color, {
-    String logoUrl = 'assets/images/momo.png',
-  }) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Stack(
-          alignment: Alignment.center,
-          children: [
-            Icon(Icons.location_on, color: color, size: 70),
-            Positioned(
-              top: 6,
-              child: CircleAvatar(
-                radius: 18,
-                backgroundColor: Colors.white,
-                child: CircleAvatar(
-                  radius: 16,
-                  backgroundColor: Colors.transparent,
-                  backgroundImage: AssetImage(logoUrl),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -450,10 +412,6 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                 decoration: InputDecoration(
                   hintText: "CODE",
                   counterText: "",
-                  hintStyle: const TextStyle(
-                    letterSpacing: 0,
-                    fontWeight: FontWeight.normal,
-                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -490,16 +448,15 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
     bool isTrackingOthers =
         provider.targetUser != null &&
         provider.teamLocations.containsKey(provider.targetUser);
+    if (provider.myLocation == null || provider.isLoadingTeam)
+      return _buildShimmerCard();
 
-    if (provider.myLocation == null) {
-      return const SizedBox();
-    }
-    final displayLocation = isTrackingOthers
-        ? provider.teamLocations[provider.targetUser]!
-        : provider.myLocation!;
-    final displayName = isTrackingOthers
-        ? provider.targetUser
-        : "My Location (Solo)";
+    final targetUserData = isTrackingOthers
+        ? provider.teamLocations[provider.targetUser]
+        : null;
+    final displayLocation = isTrackingOthers && targetUserData != null
+        ? LatLng(targetUserData['lat'], targetUserData['lng'])
+        : LatLng(provider.myLocation!.latitude, provider.myLocation!.longitude);
 
     return Card(
       elevation: 8,
@@ -517,7 +474,9 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
             ),
           ),
           title: Text(
-            displayName!,
+            isTrackingOthers && targetUserData != null
+                ? (targetUserData['name'] ?? 'Unknown')
+                : "My Location (Solo)",
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           subtitle: Column(
@@ -545,18 +504,63 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
               ),
             ],
           ),
-          trailing: Builder(
-            builder: (context) {
-              return IconButton(
-                icon: const Icon(
-                  Icons.people_alt_rounded,
-                  color: Colors.blueAccent,
+          trailing: IconButton(
+            icon: const Icon(
+              Icons.people_alt_rounded,
+              color: Colors.blueAccent,
+            ),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShimmerCard() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[700]!,
+      highlightColor: Colors.grey[100]!,
+      child: Card(
+        elevation: 8,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
                 ),
-                onPressed: () {
-                  Scaffold.of(context).openDrawer();
-                },
-              );
-            },
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: 150,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
