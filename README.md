@@ -16,7 +16,9 @@ Create or join private tracking "Rooms" using unique 6-digit alpha-numeric codes
 ## Smart Routing:
 Integrated **OSRM (Open Source Routing Machine)** API to draw real-road paths between users, not just "as the crow flies."
 ## Backend:
-**Firebase:** Handles high-velocity ephemeral data (Live Lat/Lng). 
+**Firebase:** Handles high-velocity ephemeral data (Live Lat/Lng , userData lke email,username , and userId).
+
+**PHP REST API ** handles users Avatar //i will come with this soon.
 ## Robust Permissions:
 Handles complex Android/iOS location permission states (Denied, DeniedForever, WhileInUse) with automated user redirection.
 
@@ -33,7 +35,7 @@ Handles complex Android/iOS location permission states (Denied, DeniedForever, W
 ## 🛠 Tech Stack
 
   * **Frontend:** Flutter (Dart)
-  * **Map Engine:** [Flutter Map](https://pub.dev/packages/flutter_map) / OpenStreetMap
+  * **Map Engine:** MapLibre SDK / stadiamaps
   * **Real-time Layer:** Firebase Realtime Database
   * **State Management:** `provider`
   * **Local Storage:** `shared_preferences`
@@ -47,7 +49,13 @@ Handles complex Android/iOS location permission states (Denied, DeniedForever, W
   <img width="300" height="400" alt="image" src="https://github.com/user-attachments/assets/72745a63-1cfd-434d-813e-fe1218c84233" /><img width="300" height="400" alt="image" src="https://github.com/user-attachments/assets/b8db8ffb-6d9c-4b3b-9a33-1d57cc57ae7b" /><img width="300" height="400" alt="image" src="https://github.com/user-attachments/assets/c7c5d6ce-51cb-4fc7-9bee-76769cad5ba6" /><img width="300" height="400" alt="image" src="https://github.com/user-attachments/assets/03927244-db74-4819-afdd-5644440aeb90" />
  </p>
  ---
- 
+
+ ##  future Updates 
+  * **3D Map support :** Will include to support deep navigation, realistic and more accurate 3D  Map 
+  * **Switch in State Management :**  will switch from provider to BLOC or cubit for Advanced State management 
+  * **Adding search Places :** Will include to support search places with accurate data
+  * **Adding user profile:** Will include to support  user to choose avatars for them 
+
 ## Get the APP 
 ## Momo 
 

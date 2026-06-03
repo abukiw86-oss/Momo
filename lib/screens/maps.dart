@@ -1,5 +1,6 @@
+import 'package:screenshot/screenshot.dart';
+import 'package:maplibre_gl/maplibre_gl.dart' as maplibre;
 import '../config/imports.dart';
-import 'package:maplibre_gl/maplibre_gl.dart';
 
 class FreeTrackerMap extends StatefulWidget {
   const FreeTrackerMap({super.key});
@@ -9,9 +10,12 @@ class FreeTrackerMap extends StatefulWidget {
 }
 
 class _FreeTrackerMapState extends State<FreeTrackerMap> {
-  MapLibreMapController? _mapController;
+  maplibre.MapLibreMapController? _mapController;
+  final ScreenshotController _screenshotController = ScreenshotController();
   bool _isStyleLoaded = false;
-  static const double zoom = 17.8;
+  static const double zoom = 10.8;
+  double _currentTilt = 60.0;
+
   @override
   void initState() {
     super.initState();
@@ -21,7 +25,7 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
     });
   }
 
-  void _onMapCreated(MapLibreMapController controller) {
+  void _onMapCreated(maplibre.MapLibreMapController controller) {
     _mapController = controller;
   }
 
@@ -38,16 +42,16 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
     _mapController!.addFillExtrusionLayer(
       "openfreemap",
       "3d-buildings-layer",
-      const FillExtrusionLayerProperties(
+      const maplibre.FillExtrusionLayerProperties(
         fillExtrusionColor: "#ffffff",
         fillExtrusionHeight: ["get", "render_height"],
         fillExtrusionBase: ["get", "render_min_height"],
-        fillExtrusionOpacity: 1,
+        fillExtrusionOpacity: 1.0,
       ),
     );
   }
 
-  void _updateMapElements() {
+  void _updateMapElements() async {
     if (_mapController == null || !_isStyleLoaded) return;
     final provider = Provider.of<TrackingProvider>(context, listen: false);
 
@@ -55,37 +59,54 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
     _mapController!.clearSymbols();
 
     if (provider.routePoints.isNotEmpty) {
-      List<LatLng> mapLibrePoints = provider.routePoints
-          .map((p) => LatLng(p.latitude, p.longitude))
+      List<maplibre.LatLng> mapLibrePoints = provider.routePoints
+          .map((p) => maplibre.LatLng(p.latitude, p.longitude))
           .toList();
 
-      _mapController!.addLine(
-        LineOptions(
+      await _mapController!.addLine(
+        maplibre.LineOptions(
           geometry: mapLibrePoints,
           lineColor: "#0000FF",
-          lineWidth: 4.0,
+          lineWidth: 5.0,
           lineOpacity: 0.8,
         ),
       );
     }
 
-    provider.teamLocations.forEach((userId, userData) {
+    for (var entry in provider.teamLocations.entries) {
+      String userId = entry.key;
+      Map<String, dynamic> userData = entry.value;
       bool isTracked = userId == provider.targetUser;
 
-      _mapController!.addSymbol(
-        SymbolOptions(
-          geometry: LatLng(userData['lat'], userData['lng']),
-          iconImage: isTracked ? "custom-marker" : "friend-marker",
-          textField: userData['name'] ?? 'Unknown',
-          textColor: isTracked ? "#000000" : "#FFFFFF",
-          textOffset: const Offset(0, 2.5),
-          textAnchor: "top",
-          textSize: 14.0,
-          iconColor: isTracked ? "#000000" : "#00000ff",
-          iconSize: 2,
+      Widget markerUi = _markerWidget(
+        userData['name'] ?? 'Unknown',
+        isTracked ? Colors.green : Colors.red,
+        logoUrl: 'assets/images/appa.jpeg',
+      );
+
+      Uint8List? imageBytes = await _screenshotController.captureFromWidget(
+        markerUi,
+        pixelRatio: MediaQuery.of(context).devicePixelRatio,
+        delay: const Duration(milliseconds: 50),
+      );
+      if (imageBytes.isEmpty) continue;
+
+      String symbolImageKey = "marker_$userId";
+
+      try {
+        await _mapController!.addImage(symbolImageKey, imageBytes);
+      } catch (e) {
+        debugPrint("Error adding symbol image: $e");
+      }
+
+      await _mapController!.addSymbol(
+        maplibre.SymbolOptions(
+          geometry: maplibre.LatLng(userData['lat'], userData['lng']),
+          iconImage: symbolImageKey,
+          iconSize: 1.0,
         ),
       );
-    });
+    }
   }
 
   void _joinSession(String sessionId, bool isCreatingSession) async {
@@ -96,13 +117,63 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
     );
     if (!mounted) return;
     if (!success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Invalid Code!"),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ShowSnackbar().show(message: "Session not found. Please check the code.");
     }
+  }
+
+  Widget _markerWidget(
+    String label,
+    Color color, {
+    String logoUrl = 'assets/images/momo.png',
+  }) {
+    return Material(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(Icons.location_on, color: color, size: 70),
+              Positioned(
+                top: 6,
+                child: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Colors.white,
+                  child: CircleAvatar(
+                    radius: 16,
+                    backgroundColor: Colors.transparent,
+                    backgroundImage: AssetImage(logoUrl),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(4),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -114,14 +185,14 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
 
           if (provider.myLocation != null) {
             _mapController!.animateCamera(
-              CameraUpdate.newCameraPosition(
-                CameraPosition(
-                  target: LatLng(
+              maplibre.CameraUpdate.newCameraPosition(
+                maplibre.CameraPosition(
+                  target: maplibre.LatLng(
                     provider.myLocation!.latitude,
                     provider.myLocation!.longitude,
                   ),
                   zoom: zoom,
-                  tilt: 95.0,
+                  tilt: _currentTilt,
                   bearing: -10.0,
                 ),
               ),
@@ -148,12 +219,10 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                         ),
                       );
                     },
-                    currentAccountPicture: CircleAvatar(
+                    currentAccountPicture: const CircleAvatar(
                       radius: 40,
                       backgroundColor: Colors.transparent,
-                      backgroundImage: const AssetImage(
-                        'assets/images/momo.png',
-                      ),
+                      backgroundImage: AssetImage('assets/images/momo.png'),
                     ),
                     accountName: Text(provider.userName),
                     accountEmail: Text(
@@ -192,8 +261,11 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                                 provider.selectTargetUser(userId);
                                 if (_mapController != null) {
                                   _mapController!.animateCamera(
-                                    CameraUpdate.newLatLngZoom(
-                                      LatLng(userData['lat'], userData['lng']),
+                                    maplibre.CameraUpdate.newLatLngZoom(
+                                      maplibre.LatLng(
+                                        userData['lat'],
+                                        userData['lng'],
+                                      ),
                                       zoom,
                                     ),
                                   );
@@ -233,6 +305,7 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                   : ''}",
             ),
             actions: [
+              const ThemeToggleButton(),
               IconButton(
                 icon: const Icon(Icons.search),
                 onPressed: () {
@@ -249,45 +322,53 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
           ),
           body: Stack(
             children: [
-              MapLibreMap(
-                initialCameraPosition: CameraPosition(
+              maplibre.MapLibreMap(
+                initialCameraPosition: maplibre.CameraPosition(
                   target: provider.myLocation != null
-                      ? LatLng(
+                      ? maplibre.LatLng(
                           provider.myLocation!.latitude,
                           provider.myLocation!.longitude,
                         )
-                      : const LatLng(9.03, 38.74),
+                      : const maplibre.LatLng(9.0054, 38.7636),
                   zoom: zoom,
                 ),
-                styleString: "https://tiles.openfreemap.org/styles/liberty",
+                styleString:
+                    "https://tiles.stadiamaps.com/styles/outdoors.json?api_key=${dotenv.env['MAP_API_KEY']}",
                 onMapCreated: _onMapCreated,
                 onStyleLoadedCallback: _onStyleLoaded,
                 myLocationEnabled: true,
-                myLocationTrackingMode: MyLocationTrackingMode.trackingGps,
+                myLocationTrackingMode:
+                    maplibre.MyLocationTrackingMode.tracking,
               ),
               Positioned(
-                bottom: 20,
+                right: 10,
+                top: MediaQuery.of(context).size.height * 0.25,
+                bottom: MediaQuery.of(context).size.height * 0.25,
+                child: _buildTiltAdjuster(),
+              ),
+              Positioned(
+                bottom: 30,
                 left: 10,
                 right: 10,
                 child: _buildDistanceCard(provider),
               ),
               Positioned(
-                right: 20,
-                bottom: 110,
+                left: 20,
+                bottom: 130,
                 child: FloatingActionButton(
                   backgroundColor: Colors.blueAccent,
                   child: const Icon(Icons.my_location, color: Colors.white),
                   onPressed: () {
                     if (provider.myLocation != null && _mapController != null) {
                       _mapController!.animateCamera(
-                        CameraUpdate.newCameraPosition(
-                          CameraPosition(
-                            target: LatLng(
+                        maplibre.CameraUpdate.newCameraPosition(
+                          maplibre.CameraPosition(
+                            target: maplibre.LatLng(
                               provider.myLocation!.latitude,
                               provider.myLocation!.longitude,
                             ),
                             zoom: zoom,
-                            tilt: 60.0,
+                            tilt: _currentTilt,
                           ),
                         ),
                       );
@@ -444,19 +525,94 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
     );
   }
 
+  Widget _buildTiltAdjuster() {
+    return Card(
+      shadowColor: Colors.black,
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      color: Colors.transparent,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 4.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.layers_clear_rounded,
+              size: 18,
+              color: Colors.blueAccent,
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: RotatedBox(
+                quarterTurns:
+                    3, // Rotates the slider counter-clockwise to point vertically UP
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 4,
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 8,
+                    ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 14,
+                    ),
+                  ),
+                  child: Slider(
+                    value: _currentTilt,
+                    min: 0.0, // Flat overhead 2D view
+                    max: 85.0, // Deep 3D perspective horizon limit
+                    activeColor: Colors.blueAccent,
+                    inactiveColor: Colors.grey[300],
+                    onChanged: (newValue) {
+                      setState(() {
+                        _currentTilt = newValue;
+                      });
+
+                      if (_mapController != null) {
+                        _mapController!.moveCamera(
+                          maplibre.CameraUpdate.bearingTo(
+                            _mapController!.cameraPosition!.bearing,
+                          ),
+                        );
+                        _mapController!.moveCamera(
+                          maplibre.CameraUpdate.tiltTo(_currentTilt),
+                        );
+                      }
+                    },
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "${_currentTilt.toStringAsFixed(0)}°",
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: Colors.black54,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildDistanceCard(TrackingProvider provider) {
     bool isTrackingOthers =
         provider.targetUser != null &&
         provider.teamLocations.containsKey(provider.targetUser);
-    if (provider.myLocation == null || provider.isLoadingTeam)
+    if (provider.myLocation == null || provider.isLoadingTeam) {
       return _buildShimmerCard();
-
+    }
     final targetUserData = isTrackingOthers
         ? provider.teamLocations[provider.targetUser]
         : null;
     final displayLocation = isTrackingOthers && targetUserData != null
-        ? LatLng(targetUserData['lat'], targetUserData['lng'])
-        : LatLng(provider.myLocation!.latitude, provider.myLocation!.longitude);
+        ? maplibre.LatLng(targetUserData['lat'], targetUserData['lng'])
+        : maplibre.LatLng(
+            provider.myLocation!.latitude,
+            provider.myLocation!.longitude,
+          );
 
     return Card(
       elevation: 8,

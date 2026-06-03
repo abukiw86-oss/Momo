@@ -1,5 +1,4 @@
 import '/config/imports.dart';
-
 import 'dart:async';
 
 class SplashScreen extends StatefulWidget {
@@ -15,7 +14,7 @@ class _SplashScreenState extends State<SplashScreen>
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
   late Animation<double> _pulseAnimation;
-  TrackingProvider _trackingProvider = TrackingProvider();
+  final TrackingProvider _trackingProvider = TrackingProvider();
   @override
   void initState() {
     super.initState();
@@ -53,20 +52,59 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
-Future<void> _startSplashSequence() async { 
-  _controller.forward();
- 
-  await _trackingProvider.initializeTracking(); 
-  await Future.delayed(const Duration(seconds: 3));
- 
-  if (mounted) {
-    _navigateToNext();
+  Future<void> _startSplashSequence() async {
+    _controller.forward();
+    await handleLocationAccess();
+    await _trackingProvider.initializeTracking();
+    await Future.delayed(const Duration(seconds: 3));
+    if (mounted) {
+      _navigateToNext();
+    }
   }
-}
+
+  Future<void> handleLocationAccess() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      await HandleLocationAccess().showPermissionDialog(
+        title: "GPS Disabled",
+        content: "Please enable location services in your system settings.",
+        onConfirm: () => Geolocator.openLocationSettings(),
+      );
+      return;
+    }
+    permission = await Geolocator.checkPermission();
+
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        await HandleLocationAccess().showPermissionDialog(
+          title: "Permission Required",
+          content: "This app needs location access to track your journey.",
+          onConfirm: () => handleLocationAccess(),
+        );
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      await HandleLocationAccess().showPermissionDialog(
+        title: "Permission Permanently Denied",
+        content:
+            "You have disabled location permissions. Please enable them in app settings to continue.",
+        onConfirm: () => Geolocator.openAppSettings(),
+      );
+      return;
+    }
+  }
+
   void _navigateToNext() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (context) => const FreeTrackerMap()));
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const FreeTrackerMap()),
+      (route) => false,
+    );
   }
 
   @override

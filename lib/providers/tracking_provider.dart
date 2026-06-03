@@ -18,7 +18,6 @@ class TrackingProvider extends ChangeNotifier {
   String _email = "";
   String _userId = "";
   String? _currentSessionId;
-  bool _isSearching = false;
   bool _isLoadingTeam = false;
   bool _isRequiredData = false;
 
@@ -35,26 +34,10 @@ class TrackingProvider extends ChangeNotifier {
   String get email => _email;
   String get userId => _userId;
   String? get currentSessionId => _currentSessionId;
-  bool get isSearching => _isSearching;
   bool get isRequiredData => _isRequiredData;
   bool get isLoadingTeam => _isLoadingTeam;
-  void init() {
-    initialData(onDataRequired: ShowRegisterDialogue().showDialog)
-        .then((_) => initializeTracking())
-        .catchError((e) => debugPrint("Initialization error: $e"));
-  }
 
-  void toggleSearching() {
-    _isSearching = !_isSearching;
-    notifyListeners();
-  }
-
-  void setSearching(bool val) {
-    _isSearching = val;
-    notifyListeners();
-  }
-
-  Future<void> initialData({required VoidCallback onDataRequired}) async {
+  Future<void> initialData({VoidCallback? onDataRequired}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       String? savedName = prefs.getString('user_name');
@@ -62,7 +45,11 @@ class TrackingProvider extends ChangeNotifier {
       String? savedUserId = prefs.getString('user_id');
       initializeTracking();
       if (savedName == null || savedEmail == null || savedUserId == null) {
-        onDataRequired();
+        if (onDataRequired == null) {
+          ShowRegisterDialogue().showDialog();
+        } else {
+          onDataRequired();
+        }
         _isRequiredData = true;
         notifyListeners();
       } else {
@@ -79,11 +66,11 @@ class TrackingProvider extends ChangeNotifier {
 
   Future<void> initializeTracking() async {
     try {
-      // Position? lastKnown = await Geolocator.getLastKnownPosition();
-      // if (lastKnown != null) {
-      //   _myLocation = LatLng(lastKnown.latitude, lastKnown.longitude);
-      //   notifyListeners();
-      // }
+      Position? lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        _myLocation = LatLng(lastKnown.latitude, lastKnown.longitude);
+        notifyListeners();
+      }
 
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -95,7 +82,7 @@ class TrackingProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint("Error in initializeTracking: $e");
       if (_myLocation == null) {
-        _myLocation = const LatLng(4.22, 38.11);
+        _myLocation = const LatLng(9.0054, 38.7636);
         notifyListeners();
       }
     }
@@ -134,7 +121,7 @@ class TrackingProvider extends ChangeNotifier {
         await prefs.setString('email', email);
         await prefs.setString('user_id', userId);
       } else {
-        initialData(onDataRequired: ShowRegisterDialogue().showDialog);
+        await initialData(onDataRequired: ShowRegisterDialogue().showDialog);
         ShowSnackbar().show(message: "your email was not found");
       }
     } else {
@@ -217,7 +204,6 @@ class TrackingProvider extends ChangeNotifier {
     _targetUser = null;
     _routePoints.clear();
     _distance = 0.0;
-    _isSearching = false;
     _isLoadingTeam = false;
     notifyListeners();
 
@@ -257,13 +243,7 @@ class TrackingProvider extends ChangeNotifier {
             if (_targetUser == null && newTeam.isNotEmpty) {
               _targetUser = newTeam.keys.first;
             }
-
-            if (_targetUser != null && newTeam.containsKey(_targetUser)) {
-              final targetData = newTeam[_targetUser]!;
-              updateRoadRoute(LatLng(targetData['lat'], targetData['lng']));
-            } else {
-              notifyListeners();
-            }
+            notifyListeners();
           }
         });
 
@@ -275,64 +255,6 @@ class TrackingProvider extends ChangeNotifier {
     _routePoints.clear();
     _targetUser = userId;
     notifyListeners();
-    final targetData = _teamLocations[userId]!;
-    updateRoadRoute(LatLng(targetData['lat'], targetData['lng']));
-  }
-
-  Future<void> updateRoadRoute(LatLng destination) async {
-    if (_myLocation == null) return;
-
-    final url =
-        'https://router.project-osrm.org/route/v1/driving/'
-        '${_myLocation!.longitude},${_myLocation!.latitude};'
-        '${destination.longitude},${destination.latitude}?overview=full&geometries=geojson';
-
-    try {
-      final res = await http.get(Uri.parse(url));
-      if (res.statusCode == 200) {
-        final data = json.decode(res.body);
-        if (data['routes'] != null && data['routes'].isNotEmpty) {
-          final List coords = data['routes'][0]['geometry']['coordinates'];
-          _routePoints = coords
-              .map((c) => LatLng(c[1].toDouble(), c[0].toDouble()))
-              .toList();
-          _distance = (data['routes'][0]['distance'] as num).toDouble();
-          notifyListeners();
-        }
-      }
-    } catch (e) {
-      debugPrint("Routing Error: $e");
-    }
-  }
-
-  Future<LatLng?> searchPlace(String query) async {
-    if (query.isEmpty) return null;
-
-    try {
-      final snapshot = await dbRef.ref("places/$query").get();
-
-      final data = snapshot.value as Map?;
-      if (data != null) {
-        for (var entry in data.entries) {
-          final v = entry.value as Map;
-          if (v['name'].toString().toLowerCase().contains(
-            query.toLowerCase(),
-          )) {
-            LatLng target = LatLng(
-              (v['lat'] as num).toDouble(),
-              (v['lng'] as num).toDouble(),
-            );
-            _isSearching = false;
-            notifyListeners();
-            updateRoadRoute(target);
-            return target;
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint("Search error: $e");
-    }
-    return null;
   }
 
   @override

@@ -3,8 +3,8 @@ import 'config/imports.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // await DeviceDetect().detectRoot();
-
-  await HandleLocationAccess().handleLocationAccess();
+  final themeProvider = ThemeProvider();
+  await themeProvider.loadTheme();
   try {
     await dotenv.load(fileName: ".env");
   } catch (e) {
@@ -12,8 +12,11 @@ void main() async {
   }
   await Firebase.initializeApp();
   runApp(
-    ChangeNotifierProvider(
-      create: (context) => TrackingProvider(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => TrackingProvider()),
+        ChangeNotifierProvider.value(value: themeProvider),
+      ],
       child: const MyApp(),
     ),
   );
@@ -24,15 +27,18 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: navigatorKey,
-      debugShowCheckedModeBanner: false,
-      title: 'Momo',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
-      ),
-      home: const SplashScreen(),
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        return MaterialApp(
+          navigatorKey: navigatorKey,
+          title: 'Momo',
+          debugShowCheckedModeBanner: false,
+          theme: AppThemes.lightTheme,
+          darkTheme: AppThemes.darkTheme,
+          themeMode: themeProvider.themeMode,
+          home: const SplashScreen(),
+        );
+      },
     );
   }
 }
