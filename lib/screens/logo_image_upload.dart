@@ -36,13 +36,15 @@ class _ChangeLogoScreenState extends State<ChangeLogoScreen> {
   }
 
   Future<void> _submitForm() async {
-    final result = await imageUploadProvider.uploadUserLogo(
-      imageFile: _selectedImage,
-    );
+    // we will added the upload logic here
 
+    // final result = await imageUploadProvider.uploadUserLogo(
+    //   imageFile: _selectedImage,
+    // );
     if (mounted) {
       ShowSnackbar().show(
-        message: result['message'] ?? 'Unknown response from server',
+        message:
+            'We will come With this feature in the next update! Stay tuned.',
       );
     }
   }

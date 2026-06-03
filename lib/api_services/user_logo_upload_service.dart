@@ -4,7 +4,7 @@ class UserLogoUploadService {
   static String baseUrl = dotenv.env['USER_LOGO_API_URL']!;
   static final Dio _dio = Dio();
 
-  static Future<Map<String, dynamic>> registerUser({
+  static Future<Map<String, dynamic>> uploadUserLogo({
     required String userId,
     required String email,
     File? imageFile,

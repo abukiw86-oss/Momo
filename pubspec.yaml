@@ -23,6 +23,7 @@ dependencies:
   dio: ^5.7.0
   shimmer: ^3.0.0 
   maplibre_gl: ^0.26.1
+  screenshot: ^3.0.0
   
 
 dev_dependencies:

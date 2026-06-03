@@ -18,7 +18,7 @@ class LogoUploadProvider extends ChangeNotifier {
       };
     }
 
-    final result = await UserLogoUploadService.registerUser(
+    final result = await UserLogoUploadService.uploadUserLogo(
       userId: savedUserId,
       email: savedEmail,
       imageFile: imageFile,

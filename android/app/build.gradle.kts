@@ -3,9 +3,9 @@ import java.io.FileInputStream
 
 plugins {
     id("com.android.application")
-    id("com.google.gms.google-services")
+    id("com.google.gms.google-services")  
     id("kotlin-android") 
-    id("dev.flutter.flutter-gradle-plugin") 
+    id("dev.flutter.flutter-gradle-plugin")  
 }
  
 val localProperties = Properties()
