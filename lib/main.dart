@@ -15,6 +15,7 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => TrackingProvider()),
+        ChangeNotifierProvider(create: (_) => SearchProvider()),
         ChangeNotifierProvider.value(value: themeProvider),
       ],
       child: const MyApp(),

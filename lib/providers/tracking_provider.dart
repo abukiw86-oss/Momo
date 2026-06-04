@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:gps_tracker/config/imports.dart';
 
@@ -8,7 +7,7 @@ class TrackingProvider extends ChangeNotifier {
     app: Firebase.app(),
     databaseURL: dotenv.get('DB_URL', fallback: 'Fallback URL if not found'),
   );
-
+  static final Dio _dio = Dio();
   LatLng? _myLocation;
   Map<String, Map<String, dynamic>> _teamLocations = {};
   List<LatLng> _routePoints = [];
@@ -244,6 +243,7 @@ class TrackingProvider extends ChangeNotifier {
               _targetUser = newTeam.keys.first;
             }
             notifyListeners();
+            selectTargetUser(_targetUser!);
           }
         });
 
@@ -255,6 +255,34 @@ class TrackingProvider extends ChangeNotifier {
     _routePoints.clear();
     _targetUser = userId;
     notifyListeners();
+    updateRoadRoute(
+      LatLng(_teamLocations[userId]!['lat'], _teamLocations[userId]!['lng']),
+    );
+  }
+
+  Future<void> updateRoadRoute(LatLng destination) async {
+    if (_myLocation == null) return;
+    final url =
+        'https://router.project-osrm.org/route/v1/driving/'
+        '${_myLocation!.longitude},${_myLocation!.latitude};'
+        '${destination.longitude},${destination.latitude}?overview=full&geometries=geojson';
+
+    try {
+      final res = await _dio.get(url);
+      if (res.statusCode == 200) {
+        final data = res.data;
+        if (data['routes'] != null && data['routes'].isNotEmpty) {
+          final List coords = data['routes'][0]['geometry']['coordinates'];
+          _routePoints = coords
+              .map((c) => LatLng(c[1].toDouble(), c[0].toDouble()))
+              .toList();
+          _distance = (data['routes'][0]['distance'] as num).toDouble();
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint("Routing Error: $e");
+    }
   }
 
   @override

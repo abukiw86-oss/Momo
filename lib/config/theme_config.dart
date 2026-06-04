@@ -58,7 +58,7 @@ class AppThemes {
     colorSchemeSeed: Colors.blue,
     scaffoldBackgroundColor: const Color(0xFF121212),
 
-    appBarTheme: const AppBarTheme(elevation: 0, foregroundColor: Colors.black),
+    appBarTheme: const AppBarTheme(elevation: 0, foregroundColor: Colors.white),
 
     cardTheme: CardThemeData(
       elevation: 4,
