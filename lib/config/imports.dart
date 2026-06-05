@@ -12,7 +12,7 @@ export 'package:flutter_dotenv/flutter_dotenv.dart';
 export 'package:gps_tracker/providers/providers.dart';
 export '/screens/screens.dart';
 export 'package:gps_tracker/config/global_navigator_key.dart';
-export 'package:gps_tracker/screens/root_warning_screen.dart';
+export 'package:gps_tracker/screens/root_jailbreak_warning_screen.dart';
 export 'package:gps_tracker/utilities/utilities.dart';
 export 'package:gps_tracker/widgets/widgets.dart';
 export 'dart:io';

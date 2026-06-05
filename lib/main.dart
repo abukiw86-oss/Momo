@@ -37,9 +37,43 @@ class MyApp extends StatelessWidget {
           theme: AppThemes.lightTheme,
           darkTheme: AppThemes.darkTheme,
           themeMode: themeProvider.themeMode,
-          home: const SplashScreen(),
+          home: const OnboardingChecker(),
         );
       },
     );
+  }
+}
+
+class OnboardingChecker extends StatefulWidget {
+  const OnboardingChecker({super.key});
+
+  @override
+  State<OnboardingChecker> createState() => _OnboardingCheckerState();
+}
+
+class _OnboardingCheckerState extends State<OnboardingChecker> {
+  bool? _showOnboarding;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkOnboardingStatus();
+  }
+
+  Future<void> _checkOnboardingStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final onboardingCompleted = prefs.getBool('onboarding_completed') ?? false;
+
+    setState(() {
+      _showOnboarding = !onboardingCompleted;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_showOnboarding == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    return _showOnboarding! ? const OnboardingScreen() : const SplashScreen();
   }
 }
