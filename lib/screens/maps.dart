@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:maplibre_gl/maplibre_gl.dart' as maplibre;
 import '../config/imports.dart';
 
@@ -8,23 +9,49 @@ class FreeTrackerMap extends StatefulWidget {
   State<FreeTrackerMap> createState() => _FreeTrackerMapState();
 }
 
-class _FreeTrackerMapState extends State<FreeTrackerMap> {
+class _FreeTrackerMapState extends State<FreeTrackerMap>
+    with WidgetsBindingObserver {
   maplibre.MapLibreMapController? _mapController;
   final DraggableScrollableController _bottomSheetController =
       DraggableScrollableController();
+
+  VoidCallback? _providerListener;
+  Timer? _updateTimer;
+
   bool _isStyleLoaded = false;
   static const double zoom = 15.6;
   double _currentTilt = 65.0;
+  bool _isMapDisposed = false;
+  bool _currentTheme = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = Provider.of<TrackingProvider>(context, listen: false);
       provider.initialData(onDataRequired: ShowRegisterDialogue().showDialog);
       final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+      _currentTheme = themeProvider.isDarkMode;
       themeProvider.addListener(_onThemeChanged);
     });
+  }
+
+  Future<void> _disposeMapController() async {
+    if (_mapController != null && !_isMapDisposed) {
+      _isMapDisposed = true;
+      try {
+        _updateTimer?.cancel();
+        await _mapController!.clearSymbols();
+        await _mapController!.clearLines();
+        await _mapController!.clearCircles();
+        _mapController!.dispose();
+        _mapController = null;
+      } catch (e) {
+        debugPrint("Error disposing map: $e");
+      }
+    }
   }
 
   void _onMapCreated(maplibre.MapLibreMapController controller) {
@@ -32,6 +59,8 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
   }
 
   void _onStyleLoaded() async {
+    if (!mounted) return;
+
     setState(() {
       _isStyleLoaded = true;
     });
@@ -40,20 +69,69 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
 
     final provider = Provider.of<TrackingProvider>(context, listen: false);
 
-    provider.addListener(() {
-      if (mounted && _mapController != null && _isStyleLoaded) {
-        _updateMapElements();
+    if (_providerListener != null) {
+      provider.removeListener(_providerListener!);
+    }
+
+    _providerListener = () {
+      if (_updateTimer?.isActive ?? false) return;
+      _updateTimer = Timer(const Duration(milliseconds: 100), () {
+        if (mounted &&
+            _mapController != null &&
+            _isStyleLoaded &&
+            !_isMapDisposed) {
+          _updateMapElements();
+        }
+      });
+    };
+
+    provider.addListener(_providerListener!);
+  }
+
+  Future<void> leaveSession(TrackingProvider provider) async {
+    if (_mapController != null &&
+        provider.myLocation != null &&
+        !_isMapDisposed) {
+      try {
+        await _mapController!.animateCamera(
+          maplibre.CameraUpdate.newCameraPosition(
+            maplibre.CameraPosition(
+              target: maplibre.LatLng(
+                provider.myLocation!.latitude,
+                provider.myLocation!.longitude,
+              ),
+              zoom: zoom,
+              tilt: _currentTilt,
+            ),
+          ),
+        );
+      } catch (e) {
+        debugPrint("Error animating camera: $e");
       }
-    });
+    }
+
+    await provider.leaveSession();
+    await _mapController!.clearSymbols();
+    await _mapController!.clearCircles();
+    await _mapController!.clearLines();
+    if (mounted) {
+      Navigator.pop(context);
+    }
   }
 
   void _trackTeam(TrackingProvider provider) {
+    if (_mapController == null || _isMapDisposed) return;
     if (provider.currentSessionId == null || provider.targetUser == null)
       return;
+
+    final targetUserData = provider.teamLocations[provider.targetUser];
+    if (targetUserData == null) return;
+
     final trackingMember = maplibre.LatLng(
-      provider.teamLocations[provider.targetUser]!['lat'],
-      provider.teamLocations[provider.targetUser]!['lng'],
+      targetUserData['lat'],
+      targetUserData['lng'],
     );
+
     _mapController!.animateCamera(
       maplibre.CameraUpdate.newCameraPosition(
         maplibre.CameraPosition(
@@ -66,17 +144,18 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
     );
   }
 
-  void _onThemeChanged() {
-    if (_mapController != null && _isStyleLoaded) {
+  void _onThemeChanged() async {
+    if (_mapController != null && _isStyleLoaded && !_isMapDisposed) {
       final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
-      final newStyle = themeProvider.isDarkMode
-          ? "https://tiles.openfreemap.org/styles/dark"
-          : "https://tiles.openfreemap.org/styles/liberty";
-
-      try {
-        _mapController!.setStyle(newStyle);
-      } catch (e) {
-        setState(() {});
+      if (_currentTheme != themeProvider.isDarkMode) {
+        _currentTheme = themeProvider.isDarkMode;
+        try {
+          await _mapController!.setStyle(
+            _getStyleString(themeProvider.isDarkMode),
+          );
+        } catch (e) {
+          debugPrint("Error updating style: $e");
+        }
       }
     }
   }
@@ -88,7 +167,7 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
   }
 
   void _enable3dBuildings() {
-    if (_mapController == null) return;
+    if (_mapController == null || _isMapDisposed) return;
 
     _mapController!.addFillExtrusionLayer(
       "openfreemap",
@@ -187,7 +266,7 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
   }
 
   void _addBuildingGlow() {
-    if (_mapController == null) return;
+    if (_mapController == null || _isMapDisposed) return;
     _mapController!.addFillExtrusionLayer(
       "openfreemap",
       "3d-buildings-glow",
@@ -213,46 +292,51 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
   }
 
   void _updateMapElements() async {
-    if (_mapController == null || !_isStyleLoaded) return;
+    if (_mapController == null || !_isStyleLoaded || _isMapDisposed) return;
     final provider = Provider.of<TrackingProvider>(context, listen: false);
 
-    await _mapController!.clearSymbols();
-    await _mapController!.clearCircles();
-    await _mapController!.clearLines();
-    if (provider.routePoints.isNotEmpty) {
-      List<maplibre.LatLng> mapLibrePoints = provider.routePoints
-          .map((p) => maplibre.LatLng(p.latitude, p.longitude))
-          .toList();
-      await _mapController!.addLine(
-        maplibre.LineOptions(
-          geometry: mapLibrePoints,
-          lineColor: "#0000FF",
-          lineWidth: 5.0,
-          lineOpacity: 0.8,
-          lineJoin: "round",
-        ),
-      );
-    }
+    try {
+      await _mapController!.clearSymbols();
+      await _mapController!.clearCircles();
+      await _mapController!.clearLines();
 
-    for (var entry in provider.teamLocations.entries) {
-      String userId = entry.key;
-      Map<String, dynamic> userData = entry.value;
-      bool isTracked = userId == provider.targetUser;
+      if (provider.routePoints.isNotEmpty) {
+        List<maplibre.LatLng> mapLibrePoints = provider.routePoints
+            .map((p) => maplibre.LatLng(p.latitude, p.longitude))
+            .toList();
+        await _mapController!.addLine(
+          maplibre.LineOptions(
+            geometry: mapLibrePoints,
+            lineColor: "#0000FF",
+            lineWidth: 5.0,
+            lineOpacity: 0.8,
+            lineJoin: "round",
+          ),
+        );
+      }
 
-      final double userLat = (userData['lat'] as num?)?.toDouble() ?? 0.0;
-      final double userLng = (userData['lng'] as num?)?.toDouble() ?? 0.0;
-      if (userLat == 0.0 || userLng == 0.0) continue;
+      for (var entry in provider.teamLocations.entries) {
+        String userId = entry.key;
+        Map<String, dynamic> userData = entry.value;
+        bool isTracked = userId == provider.targetUser;
 
-      String statusColorHex = isTracked ? "#00FF00" : "#FF0000";
-      await _mapController!.addCircle(
-        maplibre.CircleOptions(
-          geometry: maplibre.LatLng(userLat, userLng),
-          circleRadius: 8.0,
-          circleColor: statusColorHex,
-          circleStrokeWidth: 2.0,
-          circleStrokeColor: "#FFFFFF",
-        ),
-      );
+        final double userLat = (userData['lat'] as num?)?.toDouble() ?? 0.0;
+        final double userLng = (userData['lng'] as num?)?.toDouble() ?? 0.0;
+        if (userLat == 0.0 || userLng == 0.0) continue;
+
+        String statusColorHex = isTracked ? "#00FF00" : "#FF0000";
+        await _mapController!.addCircle(
+          maplibre.CircleOptions(
+            geometry: maplibre.LatLng(userLat, userLng),
+            circleRadius: 8.0,
+            circleColor: statusColorHex,
+            circleStrokeWidth: 2.0,
+            circleStrokeColor: "#FFFFFF",
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("Error updating map elements: $e");
     }
   }
 
@@ -270,8 +354,18 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
 
   @override
   void dispose() {
+    _updateTimer?.cancel();
+
+    final provider = Provider.of<TrackingProvider>(context, listen: false);
+    if (_providerListener != null) {
+      provider.removeListener(_providerListener!);
+    }
+
     final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
     themeProvider.removeListener(_onThemeChanged);
+
+    WidgetsBinding.instance.removeObserver(this);
+    _disposeMapController();
     super.dispose();
   }
 
@@ -279,6 +373,12 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
   Widget build(BuildContext context) {
     return Consumer2<TrackingProvider, ThemeProvider>(
       builder: (context, provider, themeProvider, child) {
+        if (provider.myLocation == null) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
         return Scaffold(
           extendBodyBehindAppBar: true,
           drawer: Drawer(
@@ -313,7 +413,7 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.group_add_outlined),
-                  title: const Text("Join Team Session"),
+                  title: const Text("Join Or Create Team Session"),
                   onTap: () {
                     _showSessionDialog(provider);
                   },
@@ -335,6 +435,18 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                     );
                   },
                 ),
+                if (provider.currentSessionId != null)
+                  ListTile(
+                    leading: const Icon(Icons.logout),
+                    title: Text(
+                      (provider.isSessionCreator)
+                          ? "Delete ${provider.currentSessionId} Session"
+                          : "Leave ${provider.currentSessionId} Session",
+                    ),
+                    onTap: () {
+                      leaveSession(provider);
+                    },
+                  ),
                 const Spacer(),
                 const Divider(),
                 ListTile(
@@ -370,14 +482,11 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
           body: Stack(
             children: [
               maplibre.MapLibreMap(
-                key: ValueKey(themeProvider.isDarkMode),
                 initialCameraPosition: maplibre.CameraPosition(
-                  target: (provider.myLocation == null)
-                      ? maplibre.LatLng(
-                          provider.myLocation!.latitude,
-                          provider.myLocation!.longitude,
-                        )
-                      : maplibre.LatLng(20, 20),
+                  target: maplibre.LatLng(
+                    provider.myLocation!.latitude,
+                    provider.myLocation!.longitude,
+                  ),
                   zoom: zoom,
                   tilt: _currentTilt,
                 ),
@@ -386,12 +495,12 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                 onStyleLoadedCallback: _onStyleLoaded,
                 myLocationEnabled: true,
                 myLocationTrackingMode:
-                    maplibre.MyLocationTrackingMode.tracking,
+                    maplibre.MyLocationTrackingMode.trackingCompass,
                 compassEnabled: false,
                 attributionButtonPosition:
                     maplibre.AttributionButtonPosition.bottomRight,
                 logoEnabled: false,
-                myLocationRenderMode: maplibre.MyLocationRenderMode.gps,
+                myLocationRenderMode: maplibre.MyLocationRenderMode.normal,
               ),
               Positioned(
                 right: 10,
@@ -412,7 +521,9 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                   backgroundColor: Colors.blueAccent,
                   child: const Icon(Icons.my_location, color: Colors.white),
                   onPressed: () {
-                    if (provider.myLocation != null && _mapController != null) {
+                    if (provider.myLocation != null &&
+                        _mapController != null &&
+                        !_isMapDisposed) {
                       _mapController!.animateCamera(
                         maplibre.CameraUpdate.newCameraPosition(
                           maplibre.CameraPosition(
@@ -426,6 +537,7 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                         ),
                       );
                     } else {
+                      provider.initializeTracking();
                       ShowSnackbar().show(message: "Locating you...");
                     }
                   },
@@ -611,7 +723,7 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                   child: Slider(
                     value: _currentTilt,
                     min: 0.0,
-                    max: 90.0,
+                    max: 91.0,
                     activeColor: Colors.blueAccent,
                     inactiveColor: Colors.grey[300],
                     onChanged: (newValue) {
@@ -620,13 +732,19 @@ class _FreeTrackerMapState extends State<FreeTrackerMap> {
                       });
 
                       if (_mapController != null) {
-                        _mapController!.moveCamera(
-                          maplibre.CameraUpdate.bearingTo(
-                            _mapController!.cameraPosition!.bearing,
+                        final currentBearing =
+                            _mapController!.cameraPosition?.bearing ?? 0;
+
+                        _mapController!.animateCamera(
+                          maplibre.CameraUpdate.newCameraPosition(
+                            maplibre.CameraPosition(
+                              target: _mapController!.cameraPosition!.target,
+                              zoom: _mapController!.cameraPosition!.zoom,
+                              tilt: _currentTilt,
+                              bearing: currentBearing,
+                            ),
                           ),
-                        );
-                        _mapController!.moveCamera(
-                          maplibre.CameraUpdate.tiltTo(_currentTilt),
+                          duration: const Duration(milliseconds: 100),
                         );
                       }
                     },

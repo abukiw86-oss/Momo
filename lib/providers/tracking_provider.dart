@@ -7,6 +7,7 @@ class TrackingProvider extends ChangeNotifier {
     app: Firebase.app(),
     databaseURL: dotenv.get('DB_URL', fallback: 'Fallback URL if not found'),
   );
+  final internetCheck = InternetChecker();
   static final Dio _dio = Dio();
   LatLng? _myLocation;
   Map<String, Map<String, dynamic>> _teamLocations = {};
@@ -18,12 +19,12 @@ class TrackingProvider extends ChangeNotifier {
   String _userId = "";
   String? _currentSessionId;
   bool _isLoadingTeam = false;
+  bool _isSessionCreator = false;
   bool _isRequiredData = false;
 
   StreamSubscription<Position>? _positionSubscription;
   StreamSubscription<DatabaseEvent>? _sessionSubscription;
 
-  // Getters
   LatLng? get myLocation => _myLocation;
   Map<String, Map<String, dynamic>> get teamLocations => _teamLocations;
   List<LatLng> get routePoints => _routePoints;
@@ -34,6 +35,7 @@ class TrackingProvider extends ChangeNotifier {
   String get userId => _userId;
   String? get currentSessionId => _currentSessionId;
   bool get isRequiredData => _isRequiredData;
+  bool get isSessionCreator => _isSessionCreator;
   bool get isLoadingTeam => _isLoadingTeam;
 
   Future<void> initialData({VoidCallback? onDataRequired}) async {
@@ -73,7 +75,7 @@ class TrackingProvider extends ChangeNotifier {
 
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 5),
+        timeLimit: Duration(seconds: 7),
       );
 
       _myLocation = LatLng(position.latitude, position.longitude);
@@ -82,6 +84,7 @@ class TrackingProvider extends ChangeNotifier {
       debugPrint("Error in initializeTracking: $e");
       if (_myLocation == null) {
         _myLocation = const LatLng(9.0054, 38.7636);
+        initializeTracking();
         notifyListeners();
       }
     }
@@ -94,6 +97,11 @@ class TrackingProvider extends ChangeNotifier {
   }) async {
     if (isLogin && email.isEmpty) return;
     if (!isLogin && name.isEmpty) return;
+    bool isOnline = await internetCheck.quickCheck();
+    if (!isOnline) {
+      ShowSnackbar().show(message: 'Check Your Internet Connection ');
+      return;
+    }
 
     final prefs = await SharedPreferences.getInstance();
 
@@ -186,17 +194,24 @@ class TrackingProvider extends ChangeNotifier {
     String sessionId, {
     required bool isCreatingSession,
   }) async {
+    bool isOnline = await internetCheck.quickCheck();
+    if (!isOnline) {
+      ShowSnackbar().show(message: 'Check Your Internet Connection ');
+      return false;
+    }
+
     _isLoadingTeam = true;
     notifyListeners();
+
     if (!isCreatingSession) {
       final snapshot = await dbRef.ref("sessions/$sessionId").get();
-      print(snapshot.value);
       if (!snapshot.exists) {
         _isLoadingTeam = false;
         notifyListeners();
         return false;
       }
     }
+
     _sessionSubscription?.cancel();
     _currentSessionId = sessionId;
     _teamLocations.clear();
@@ -207,14 +222,31 @@ class TrackingProvider extends ChangeNotifier {
     notifyListeners();
 
     if (_myLocation != null && _userName.isNotEmpty && _email.isNotEmpty) {
+      if (isCreatingSession) {
+        final creatorSnapshot = await dbRef
+            .ref("sessions/$sessionId/Creator")
+            .get();
+
+        if (!creatorSnapshot.exists) {
+          await dbRef.ref("sessions/$sessionId/Creator").set({
+            "user_id": _userId,
+            "email": _email,
+            "name": _userName,
+            "created_at": ServerValue.timestamp,
+          });
+        }
+      }
       await dbRef.ref("sessions/$sessionId/users/$_userId").set({
         "email": _email,
         "name": _userName,
         "lat": _myLocation!.latitude,
         "lng": _myLocation!.longitude,
         "last_seen": ServerValue.timestamp,
+        "joined_at": ServerValue.timestamp,
       });
     }
+
+    await checkIfUserIsCreator();
 
     _sessionSubscription = dbRef
         .ref("sessions/$sessionId/users")
@@ -260,8 +292,51 @@ class TrackingProvider extends ChangeNotifier {
     );
   }
 
+  Future<void> deleteSession() async {
+    if (_currentSessionId == null) {
+      ShowSnackbar().show(message: "No active session to delete");
+      return;
+    }
+
+    bool isOnline = await internetCheck.quickCheck();
+    if (!isOnline) {
+      ShowSnackbar().show(message: 'Check your internet connection');
+      return;
+    }
+
+    _isLoadingTeam = true;
+    notifyListeners();
+
+    try {
+      if (!_isSessionCreator) {
+        _isLoadingTeam = false;
+        notifyListeners();
+        ShowSnackbar().show(
+          message: "Only the session creator can delete this session",
+        );
+        return;
+      }
+
+      await dbRef.ref("sessions/$_currentSessionId").remove();
+
+      _clearLocalSessionData();
+
+      ShowSnackbar().show(message: "Session deleted successfully");
+    } catch (e) {
+      debugPrint("Error deleting session: $e");
+      _isLoadingTeam = false;
+      notifyListeners();
+      ShowSnackbar().show(message: "Error deleting session: $e");
+    }
+  }
+
   Future<void> updateRoadRoute(LatLng destination) async {
     if (_myLocation == null) return;
+    bool isOnline = await internetCheck.quickCheck();
+    if (!isOnline) {
+      ShowSnackbar().show(message: 'Check Your Internet Connection ');
+      return;
+    }
     final url =
         'https://router.project-osrm.org/route/v1/driving/'
         '${_myLocation!.longitude},${_myLocation!.latitude};'
@@ -283,6 +358,76 @@ class TrackingProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint("Routing Error: $e");
     }
+  }
+
+  Future<void> leaveSession() async {
+    if (_currentSessionId == null) {
+      ShowSnackbar().show(message: "No active session to leave");
+      return;
+    }
+    final isOnline = await internetCheck.quickCheck();
+    if (!isOnline) {
+      ShowSnackbar().show(
+        message:
+            'No internet connection. You will be removed when back online.',
+      );
+      return;
+    }
+    if (_isSessionCreator) {
+      await deleteSession();
+    }
+
+    _isLoadingTeam = true;
+    notifyListeners();
+
+    try {
+      await dbRef.ref("sessions/$_currentSessionId/users/$_userId").remove();
+
+      final remainingUsers = await dbRef
+          .ref("sessions/$_currentSessionId/users")
+          .get();
+      if (!remainingUsers.exists ||
+          (remainingUsers.value as Map?)?.isEmpty == true) {
+        await deleteSession();
+        debugPrint("Session deleted as no users remaining");
+      }
+      _clearLocalSessionData();
+      ShowSnackbar().show(message: "Left session successfully");
+    } catch (e) {
+      debugPrint("Error leaving session: $e");
+      _isLoadingTeam = false;
+      notifyListeners();
+
+      ShowSnackbar().show(
+        message: "Left session locally. Will sync when online. $e",
+      );
+    }
+  }
+
+  Future<void> checkIfUserIsCreator() async {
+    if (_currentSessionId == null) return;
+    final creatorSnapshot = await dbRef
+        .ref("sessions/$_currentSessionId/Creator")
+        .get();
+
+    if (creatorSnapshot.exists) {
+      final creatorData = creatorSnapshot.value as Map;
+      final creatorId = creatorData['user_id']?.toString();
+      _isSessionCreator = (creatorId == _userId);
+      notifyListeners();
+    }
+  }
+
+  void _clearLocalSessionData() {
+    _sessionSubscription?.cancel();
+    _currentSessionId = null;
+    _teamLocations.clear();
+    _targetUser = null;
+    _isSessionCreator = false;
+    _routePoints.clear();
+    _distance = 0.0;
+    _isLoadingTeam = false;
+    notifyListeners();
   }
 
   @override
