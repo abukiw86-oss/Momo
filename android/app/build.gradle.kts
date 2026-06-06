@@ -4,7 +4,7 @@ import java.io.FileInputStream
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")  
-    id("kotlin-android") 
+    // id("kotlin-android") 
     id("dev.flutter.flutter-gradle-plugin")  
 }
  
@@ -30,9 +30,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
-    }
+    // kotlinOptions {
+    //     jvmTarget = JavaVersion.VERSION_17.toString()
+    // }
 
     defaultConfig { 
         applicationId = "com.example.gps_tracker" 
@@ -40,8 +40,18 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-    }
  
+    }
+     
+    splits {
+        abi {
+            isEnable = false
+            // reset()
+            // include("arm64-v8a", "armeabi-v7a") doesnt support the split per abi in shorebird so 
+            isUniversalApk = true 
+        }
+    }
+    
     signingConfigs {
         create("release") {
             keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS") ?: ""
@@ -68,6 +78,12 @@ android {
         }
     }
 }
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
 
 flutter {
     source = "../.."

@@ -14,7 +14,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   final List<OnboardingData> _onboardingData = [
     OnboardingData(
-      title: "Real-Time GPS Tracking",
+      'assets/images/momo.png',
+      title: "Momo",
       description:
           "Track your location in real-time with high accuracy. Never lose your way with our advanced GPS technology.",
       icon: Icons.gps_fixed,
@@ -28,6 +29,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       ],
     ),
     OnboardingData(
+      '',
       title: "Team Location Sharing",
       description:
           "Create or join sessions to share your location with friends and family. Perfect for group activities!",
@@ -42,6 +44,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       ],
     ),
     OnboardingData(
+      '',
       title: "Smart Navigation & Routing",
       description:
           "Get directions, calculate distances, and navigate to your team members with intelligent routing.",
@@ -217,11 +220,13 @@ class OnboardingData {
   final String title;
   final String description;
   final IconData icon;
+  final String? logoPath;
   final Color color;
   final IconData image;
   final List<String> features;
 
-  OnboardingData({
+  OnboardingData(
+    this.logoPath, {
     required this.title,
     required this.description,
     required this.icon,
@@ -263,11 +268,16 @@ class OnboardingPage extends StatelessWidget {
                         color: data.color.withOpacity(0.2),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(
-                        data.image,
-                        size: 80 * value,
-                        color: Colors.white,
-                      ),
+                      child: (data.logoPath == null || data.logoPath!.isEmpty)
+                          ? Icon(
+                              data.image,
+                              size: 80 * value,
+                              color: Colors.white,
+                            )
+                          : CircleAvatar(
+                              radius: 80,
+                              backgroundImage: AssetImage(data.logoPath!),
+                            ),
                     ),
                   );
                 },
